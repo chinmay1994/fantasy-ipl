@@ -95,24 +95,17 @@ def get_all_records(sheet_name: str) -> pd.DataFrame:
 
 @st.cache_data(ttl=300)
 def get_rules() -> Rules:
-    worksheet = get_worksheet("Rules")
+    df = get_all_records("Rules")
     rules = Rules()
     
-    if worksheet is None:
-        return rules
-    
-    try:
-        data = worksheet.get_all_values()
-        for row in data:
-            if len(row) < 2:
-                continue
+    for _, row in df.iterrows():
+        key = str(row.get("Contest Controls", "")).strip().lower().replace(" ", "_").replace("-", "_")
+        value = str(row.get("Unnamed: 1", "")).strip()
+        
+        if not value:
+            continue
             
-            key = str(row[0]).strip().lower().replace(" ", "_").replace("-", "_")
-            value = row[1]
-            
-            if not value:
-                continue
-                
+        try:
             if key == "max_players_per_fantasy_team":
                 rules.max_players = int(value)
             elif key == "min_wk":
@@ -131,32 +124,26 @@ def get_rules() -> Rules:
                 rules.captain_multiplier = float(value)
             elif key == "vice_captain_multiplier":
                 rules.vice_captain_multiplier = float(value)
-    except Exception:
-        pass
+        except (ValueError, TypeError):
+            continue
     
     return rules
 
 
 @st.cache_data(ttl=300)
+@st.cache_data(ttl=300)
 def get_scoring_rules() -> ScoringRules:
-    worksheet = get_worksheet("Rules")
+    df = get_all_records("Rules")
     scoring = ScoringRules()
     
-    if worksheet is None:
-        return scoring
-    
-    try:
-        data = worksheet.get_all_values()
-        for row in data:
-            if len(row) < 2:
-                continue
+    for _, row in df.iterrows():
+        key = str(row.get("Contest Controls", "")).strip().lower().replace(" ", "_").replace("-", "_")
+        value = str(row.get("Unnamed: 1", "")).strip()
+        
+        if not value:
+            continue
             
-            key = str(row[0]).strip().lower().replace(" ", "_").replace("-", "_")
-            value = row[1]
-            
-            if not value:
-                continue
-                
+        try:
             if key == "bat_run":
                 scoring.bat_run = float(value)
             elif key == "four_bonus":
@@ -187,8 +174,8 @@ def get_scoring_rules() -> ScoringRules:
                 scoring.run_out_assist = float(value)
             elif key == "duck_penalty":
                 scoring.duck_penalty = float(value)
-    except Exception:
-        pass
+        except (ValueError, TypeError):
+            continue
     
     return scoring
 
