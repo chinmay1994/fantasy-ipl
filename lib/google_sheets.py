@@ -271,7 +271,7 @@ def get_upcoming_matches() -> list[Match]:
     for m in all_matches:
         status_lower = m.status.lower() if m.status else ""
         
-        if status_lower == 'upcoming' and m.lock_time:
+        if status_lower == 'open' and m.lock_time:
             lock_time_ist = to_ist(m.lock_time)
             if lock_time_ist > now:
                 upcoming.append(m)
@@ -378,7 +378,7 @@ def get_team_selections(entry_id: str) -> list[FantasySelection]:
             player_name=str(row.get("PlayerName", "")),
             role=str(row.get("Role", "")),
             real_team=str(row.get("RealTeam", "")),
-            credits=float(row.get("Credits", 0)) if not pd.isna(row.get("Credits")) else 0.0,
+            credits=float(row.get("Credits")) if row.get("Credits") and str(row.get("Credits")).strip() and not pd.isna(row.get("Credits")) else 0.0,
             is_captain=is_captain,
             is_vice_captain=is_vice_captain,
         ))
