@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+import pytz
 import gspread
 from google.oauth2 import service_account
 from lib.models import (
@@ -14,6 +15,53 @@ from lib.models import (
     ScoringRules,
     PlayerPoints,
 )
+
+IST = pytz.timezone('Asia/Kolkata')
+IST_OFFSET = timedelta(hours=5, minutes=30)
+
+
+def now_ist() -> datetime:
+    return datetime.now(IST)
+
+
+def to_ist(dt: datetime) -> datetime:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return IST.localize(dt)
+    return dt.astimezone(IST)
+
+
+def is_match_live(match: Match) -> bool:
+    if match.status and match.status.lower() == 'live':
+        return True
+    if match.status and match.status.lower() == 'complete':
+        return False
+    
+    now = now_ist()
+    
+    if match.lock_time and match.start_time:
+        lock_time_ist = to_ist(match.lock_time)
+        start_time_ist = to_ist(match.start_time)
+        
+        if lock_time_ist <= now <= start_time_ist + timedelta(hours=6):
+            return True
+    
+    return False
+
+
+def is_match_completed(match: Match) -> bool:
+    if match.status and match.status.lower() == 'complete':
+        return True
+    
+    now = now_ist()
+    
+    if match.lock_time:
+        lock_time_ist = to_ist(match.lock_time)
+        if lock_time_ist < now and match.status.lower() != 'live':
+            return True
+    
+    return False
 
 
 @st.cache_resource(ttl=300)
@@ -180,7 +228,7 @@ def get_scoring_rules() -> ScoringRules:
     return scoring
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def get_matches() -> list[Match]:
     df = get_all_records("Matches")
     matches = []
@@ -188,12 +236,16 @@ def get_matches() -> list[Match]:
     for _, row in df.iterrows():
         try:
             start_time = row.get("StartTime", "")
-            if isinstance(start_time, str):
+            if isinstance(start_time, str) and start_time:
                 start_time = pd.to_datetime(start_time)
+                if start_time.tzinfo is None:
+                    start_time = IST.localize(start_time)
             
             lock_time = row.get("LockTime", "")
-            if isinstance(lock_time, str):
+            if isinstance(lock_time, str) and lock_time:
                 lock_time = pd.to_datetime(lock_time)
+                if lock_time.tzinfo is None:
+                    lock_time = IST.localize(lock_time)
             
             matches.append(Match(
                 match_id=str(row.get("MatchID", "")),
@@ -210,29 +262,43 @@ def get_matches() -> list[Match]:
     return matches
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)
 def get_upcoming_matches() -> list[Match]:
     all_matches = get_matches()
-    now = datetime.now()
-    return [m for m in all_matches if m.lock_time and m.lock_time > now]
+    now = now_ist()
+    upcoming = []
+    
+    for m in all_matches:
+        status_lower = m.status.lower() if m.status else ""
+        
+        if status_lower == 'upcoming' and m.lock_time:
+            lock_time_ist = to_ist(m.lock_time)
+            if lock_time_ist > now:
+                upcoming.append(m)
+    
+    return upcoming
 
 
 def get_live_matches() -> list[Match]:
     all_matches = get_matches()
-    now = datetime.now()
     live = []
+    
     for m in all_matches:
-        if m.lock_time and m.start_time:
-            if m.start_time <= now <= m.start_time + pd.Timedelta(hours=6):
-                if m.status.lower() not in ['complete']:
-                    live.append(m)
+        if is_match_live(m):
+            live.append(m)
+    
     return live
 
 
 def get_completed_matches() -> list[Match]:
     all_matches = get_matches()
-    now = datetime.now()
-    return [m for m in all_matches if m.status.lower() == 'complete' or (m.lock_time and m.lock_time < now)]
+    completed = []
+    
+    for m in all_matches:
+        if is_match_completed(m):
+            completed.append(m)
+    
+    return completed
 
 
 @st.cache_data(ttl=300, show_spinner=False)

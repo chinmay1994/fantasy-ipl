@@ -2,3 +2,4 @@ gspread>=6.0.0
 google-auth>=2.23.0
 pandas>=2.0.0
 streamlit>=1.28.0
+pytz>=2024.1
