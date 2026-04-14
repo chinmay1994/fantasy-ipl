@@ -17,6 +17,7 @@ from lib.google_sheets import (
     entry_exists,
     get_team_selections,
     clear_all_caches,
+    now_ist,
 )
 from lib.validators import validate_team, get_team_stats
 from lib.scoring import calculate_team_total, calculate_team_with_player_scores
@@ -446,7 +447,7 @@ def render_my_teams():
         match_name = match.match_name if match else match_id
         
         lock_time = match.lock_time if match else None
-        is_locked = lock_time and datetime.now() > lock_time
+        is_locked = lock_time and now_ist() > lock_time
         
         with st.expander(f"📌 {match_name}"):
             selections = get_team_selections(entry_id)
@@ -511,7 +512,7 @@ def render_all_teams():
     
     selected_match = match_options[selected_match_name]
     
-    now = datetime.now()
+    now = now_ist()
     if selected_match.lock_time and now < selected_match.lock_time:
         st.warning(f"⏰ This match hasn't started yet. Teams will be visible after {selected_match.lock_time.strftime('%Y-%m-%d %H:%M')}")
         return
