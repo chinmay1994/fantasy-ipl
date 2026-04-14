@@ -18,6 +18,7 @@ from lib.google_sheets import (
     get_team_selections,
     clear_all_caches,
     now_ist,
+    is_match_live,
 )
 from lib.validators import validate_team, get_team_stats
 from lib.scoring import calculate_team_total, calculate_team_with_player_scores
@@ -502,29 +503,59 @@ def render_all_teams():
     st.header("🏆 All Teams")
     
     all_matches = get_matches()
-    match_options = {m.match_name: m for m in all_matches}
     
-    selected_match_name = st.selectbox(
-        "Select Match",
-        options=list(match_options.keys()),
-        key="all_teams_match_select",
-    )
-    
-    selected_match = match_options[selected_match_name]
-    
-    now = now_ist()
-    if selected_match.lock_time and now < selected_match.lock_time:
-        st.warning(f"⏰ This match hasn't started yet. Teams will be visible after {selected_match.lock_time.strftime('%Y-%m-%d %H:%M')}")
+    if not all_matches:
+        st.info("No matches found.")
         return
     
-    teams = get_all_teams_for_match(selected_match.match_id)
+    all_matches_sorted = sorted(all_matches, key=lambda x: (
+        x.start_time.timestamp() if x.start_time else float('inf')
+    ))
+    
+    if "all_teams_index" not in st.session_state:
+        now = now_ist()
+        live_idx = 0
+        for i, m in enumerate(all_matches_sorted):
+            if is_match_live(m):
+                live_idx = i
+                break
+            elif m.start_time and m.start_time < now:
+                live_idx = i
+        st.session_state.all_teams_index = live_idx
+    
+    current_idx = st.session_state.all_teams_index
+    current_idx = max(0, min(current_idx, len(all_matches_sorted) - 1))
+    st.session_state.all_teams_index = current_idx
+    
+    match = all_matches_sorted[current_idx]
+    teams = get_all_teams_for_match(match.match_id)
+    
+    col_prev, col_title, col_next = st.columns([1, 3, 1])
+    
+    with col_prev:
+        if st.button("⬅️ Prev", disabled=current_idx == 0, key="all_teams_prev"):
+            st.session_state.all_teams_index = current_idx - 1
+            st.rerun()
+    
+    with col_title:
+        status_emoji = "🔴" if is_match_live(match) else "📌"
+        match_time = match.start_time.strftime('%Y-%m-%d %H:%M') if match.start_time else "TBD"
+        st.markdown(f"### {status_emoji} {match.match_name}")
+        st.caption(f"{match_time} ({current_idx + 1}/{len(all_matches_sorted)})")
+    
+    with col_next:
+        if st.button("Next ➡️", disabled=current_idx == len(all_matches_sorted) - 1, key="all_teams_next"):
+            st.session_state.all_teams_index = current_idx + 1
+            st.rerun()
+    
+    st.divider()
     
     if not teams:
         st.info("No teams submitted for this match yet.")
         return
     
     scoring_rules = get_scoring_rules()
-    player_points = get_player_points(selected_match.match_id)
+    player_points = get_player_points(match.match_id)
     
     teams_with_scores = []
     for team in teams:
