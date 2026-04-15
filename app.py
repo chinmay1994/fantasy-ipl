@@ -259,23 +259,46 @@ def render_create_team():
         st.warning("No upcoming matches found.")
         return
     
-    match_options = {
-        f"{m.match_name} ({m.start_time.strftime('%Y-%m-%d %H:%M')})": m
-        for m in upcoming_matches
-    }
+    upcoming_matches_sorted = sorted(upcoming_matches, key=lambda x: (
+        x.start_time.timestamp() if x.start_time else float('inf')
+    ))
     
-    selected_match_name = st.selectbox(
-        "Select Match",
-        options=list(match_options.keys()),
-        index=0,
-        key="match_selector",
-    )
+    if "create_team_index" not in st.session_state:
+        st.session_state.create_team_index = 0
     
-    selected_match = match_options[selected_match_name]
+    current_idx = st.session_state.create_team_index
+    current_idx = max(0, min(current_idx, len(upcoming_matches_sorted) - 1))
+    st.session_state.create_team_index = current_idx
+    
+    selected_match = upcoming_matches_sorted[current_idx]
+    
+    col_prev, col_title, col_next = st.columns([1, 3, 1])
+    
+    with col_prev:
+        if st.button("⬅️ Prev", disabled=current_idx == 0, key="create_team_prev"):
+            st.session_state.create_team_index = current_idx - 1
+            st.session_state.selected_players = {}
+            st.session_state.captain = None
+            st.session_state.vice_captain = None
+            st.rerun()
+    
+    with col_title:
+        status_emoji = "🔴" if is_match_live(selected_match) else "📌"
+        match_time = selected_match.start_time.strftime('%Y-%m-%d %H:%M') if selected_match.start_time else "TBD"
+        st.markdown(f"### {status_emoji} {selected_match.match_name}")
+        st.caption(f"{match_time} ({current_idx + 1}/{len(upcoming_matches_sorted)})")
+    
+    with col_next:
+        if st.button("Next ➡️", disabled=current_idx == len(upcoming_matches_sorted) - 1, key="create_team_next"):
+            st.session_state.create_team_index = current_idx + 1
+            st.session_state.selected_players = {}
+            st.session_state.captain = None
+            st.session_state.vice_captain = None
+            st.rerun()
+    
+    st.divider()
     
     existing_entry = entry_exists(st.session_state.username, selected_match.match_id)
-    if existing_entry:
-        st.info(f"You already have an entry for this match. Go to 'My Teams' to edit it.")
     
     rules = get_rules()
     squad_players = get_match_squad(selected_match.match_id)
@@ -289,6 +312,27 @@ def render_create_team():
         st.session_state.selected_players = {}
         st.session_state.captain = None
         st.session_state.vice_captain = None
+        
+        if existing_entry:
+            selections = get_team_selections(str(existing_entry))
+            player_id_map = {p.player_id: p for p in squad_players}
+            for sel in selections:
+                if sel.player_id in player_id_map:
+                    st.session_state.selected_players[sel.player_id] = player_id_map[sel.player_id]
+                if sel.is_captain:
+                    st.session_state.captain = sel.player_id
+                if sel.is_vice_captain:
+                    st.session_state.vice_captain = sel.player_id
+    elif existing_entry and not st.session_state.selected_players:
+        selections = get_team_selections(str(existing_entry))
+        player_id_map = {p.player_id: p for p in squad_players}
+        for sel in selections:
+            if sel.player_id in player_id_map:
+                st.session_state.selected_players[sel.player_id] = player_id_map[sel.player_id]
+            if sel.is_captain:
+                st.session_state.captain = sel.player_id
+            if sel.is_vice_captain:
+                st.session_state.vice_captain = sel.player_id
     
     if "selected_match_id" not in st.session_state:
         st.session_state.selected_match_id = selected_match.match_id
@@ -308,6 +352,14 @@ def render_my_teams():
     if user_entries.empty:
         st.info("You haven't submitted any teams yet.")
         return
+    
+    all_matches = get_matches()
+    match_dict = {m.match_id: m for m in all_matches}
+    
+    user_entries["match_start_time"] = user_entries["MatchID"].apply(
+        lambda x: match_dict.get(str(x)).start_time if match_dict.get(str(x)) and match_dict.get(str(x)).start_time else None
+    )
+    user_entries = user_entries.sort_values("match_start_time", ascending=False, na_position="last")
     
     rules = get_rules()
     
@@ -671,6 +723,7 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
         
         try:
             entry_id = save_entry(st.session_state.username, selected_match.match_id, players_data)
+            st.session_state.page = "📋 My Teams"
             st.success(f"Team submitted! Entry ID: {entry_id}")
             st.rerun()
         except Exception as e:
