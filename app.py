@@ -134,6 +134,50 @@ def render_home():
         for match in live_matches:
             st.subheader(f"📺 {match.match_name}")
             st.caption(f"Status: {match.status}")
+            
+            if not user_entries.empty:
+                entry = user_entries[user_entries["MatchID"].astype(str) == match.match_id]
+                if not entry.empty:
+                    entry_id = str(entry.iloc[0]["EntryID"])
+                    selections = get_team_selections(entry_id)
+                    player_points = get_player_points(match.match_id)
+                    position, total_players = get_leaderboard_position(match.match_id, st.session_state.username, scoring_rules)
+                    
+                    if player_points is not None and not player_points.empty:
+                        total_score, player_scores = calculate_team_with_player_scores(selections, player_points, scoring_rules)
+                        
+                        with st.expander(f"📊 Your Score: {total_score:.2f} pts (Rank: #{position}/{total_players})"):
+                            role_emoji = {"WK": "🧤", "BAT": "🏏", "AR": "🔄", "BWL": "🎳"}
+                            
+                            player_data = []
+                            for ps in sorted(player_scores, key=lambda x: -x.points):
+                                multiplier = ""
+                                if ps.is_captain:
+                                    multiplier = " (C)"
+                                elif ps.is_vice_captain:
+                                    multiplier = " (VC)"
+                                
+                                stats = []
+                                if ps.runs > 0:
+                                    stats.append(f"{ps.runs} runs")
+                                if ps.wickets > 0:
+                                    stats.append(f"{ps.wickets} wkts")
+                                if ps.catches > 0:
+                                    stats.append(f"{ps.catches} ct")
+                                
+                                player_data.append({
+                                    "Player": f"{role_emoji.get(ps.role, '❓')} {ps.player_name}{multiplier}",
+                                    "Pts": f"{ps.points:.1f}",
+                                    "Stats": ", ".join(stats) if stats else "-",
+                                })
+                            
+                            st.dataframe(
+                                pd.DataFrame(player_data),
+                                hide_index=True,
+                                use_container_width=True,
+                            )
+                    else:
+                        st.info("Waiting for points data...")
             st.divider()
     else:
         st.header("🏠 Dashboard")
@@ -574,14 +618,53 @@ def render_all_teams():
         with st.expander(f"#{rank} 👤 {username} - {total_points:.2f} pts"):
             role_emoji = {"WK": "🧤", "BAT": "🏏", "AR": "🔄", "BWL": "🎳"}
             
-            for s in sorted(selections, key=lambda x: x.pick_no):
-                multiplier = ""
-                if s.is_captain:
-                    multiplier = " 🏆 (2x)"
-                elif s.is_vice_captain:
-                    multiplier = " 🎖️ (1.5x)"
-                emoji = role_emoji.get(s.role, "❓")
-                st.markdown(f"{emoji} {s.player_name} ({s.role}){multiplier}")
+            if player_points is not None and not player_points.empty:
+                _, player_scores = calculate_team_with_player_scores(selections, player_points, scoring_rules)
+                player_scores_dict = {ps.player_name: ps for ps in player_scores}
+                
+                player_data = []
+                for s in sorted(selections, key=lambda x: x.pick_no):
+                    multiplier = ""
+                    if s.is_captain:
+                        multiplier = " 🏆 (2x)"
+                    elif s.is_vice_captain:
+                        multiplier = " 🎖️ (1.5x)"
+                    
+                    ps = player_scores_dict.get(s.player_name)
+                    if ps:
+                        points = ps.points
+                        stats = []
+                        if ps.runs > 0:
+                            stats.append(f"{ps.runs} runs")
+                        if ps.wickets > 0:
+                            stats.append(f"{ps.wickets} wkts")
+                        if ps.catches > 0:
+                            stats.append(f"{ps.catches} ct")
+                        stats_str = ", ".join(stats) if stats else "-"
+                    else:
+                        points = 0.0
+                        stats_str = "-"
+                    
+                    player_data.append({
+                        "Player": f"{role_emoji.get(s.role, '❓')} {s.player_name}{multiplier}",
+                        "Pts": f"{points:.1f}",
+                        "Stats": stats_str,
+                    })
+                
+                st.dataframe(
+                    pd.DataFrame(player_data),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+            else:
+                for s in sorted(selections, key=lambda x: x.pick_no):
+                    multiplier = ""
+                    if s.is_captain:
+                        multiplier = " 🏆 (2x)"
+                    elif s.is_vice_captain:
+                        multiplier = " 🎖️ (1.5x)"
+                    emoji = role_emoji.get(s.role, "❓")
+                    st.markdown(f"{emoji} {s.player_name} ({s.role}){multiplier}")
 
 
 if __name__ == "__main__":

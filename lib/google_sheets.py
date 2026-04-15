@@ -439,8 +439,12 @@ def save_entry(username: str, match_id: str, players: list[dict]) -> str:
             "",
         ])
     
+    current_row_count = len(selections_worksheet.get_all_values())
+    
+    rows_to_append = []
+    
     for i, player in enumerate(players, 1):
-        selections_worksheet.append_row([
+        rows_to_append.append([
             entry_id,
             match_id,
             username,
@@ -452,12 +456,27 @@ def save_entry(username: str, match_id: str, players: list[dict]) -> str:
             player.get("credits", 0),
             1 if player.get("is_captain") else 0,
             1 if player.get("is_vice_captain") else 0,
-            1,
-            0,
-            player.get("multiplier", 1.0),
-            0,
-            1,
         ])
+    
+    for row in rows_to_append:
+        selections_worksheet.append_row(row)
+    
+    if rows_to_append:
+        start_row = current_row_count + 1
+        end_row = start_row + len(rows_to_append) - 1
+        
+        formulas = []
+        for i in range(len(rows_to_append)):
+            row = start_row + i
+            formulas.append([
+                f'=IF(A{row}="","",IF(COUNTIFS(MatchSquad!$A:$A,B{row},MatchSquad!$B:$B,E{row})>0,1,0))',
+                f'=IF(A{row}="","",SUMIFS(PlayerPoints!$U:$U,PlayerPoints!$A:$A,B{row},PlayerPoints!$B:$B,E{row}))',
+                f'=IF(J{row}=1,Rules!$B$9,IF(K{row}=1,Rules!$B$10,1))',
+                f'=IF(A{row}="","",M{row}*N{row})',
+                f'=IF(AND(A{row}<>"",E{row}<>""),IF(COUNTIFS($A$2:A{row},A{row},$E$2:E{row},E{row})=1,1,0),0)',
+            ])
+        
+        selections_worksheet.update(f'L{start_row}:P{end_row}', formulas, value_input_option='USER_ENTERED')
     
     clear_all_caches()
     return entry_id

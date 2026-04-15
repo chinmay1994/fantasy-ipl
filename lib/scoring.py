@@ -163,6 +163,8 @@ def calculate_team_total(
 class PlayerScore:
     player_name: str
     role: str
+    match_id: str
+    player_id: str
     is_captain: bool
     is_vice_captain: bool
     runs: int = 0
@@ -234,6 +236,8 @@ def calculate_team_with_player_scores(
         player_scores.append(PlayerScore(
             player_name=selection.player_name,
             role=selection.role,
+            match_id=selection.match_id,
+            player_id=selection.player_id,
             is_captain=selection.is_captain,
             is_vice_captain=selection.is_vice_captain,
             runs=runs,
