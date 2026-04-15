@@ -474,6 +474,13 @@ def render_all_teams():
     
     st.divider()
     
+    now = now_ist()
+    match_started = match.start_time and match.start_time <= now
+    
+    if not match_started:
+        st.info(f"Teams will be visible after match starts ({match.start_time.strftime('%Y-%m-%d %H:%M')})")
+        return
+    
     if not teams:
         st.info("No teams submitted for this match yet.")
         return
