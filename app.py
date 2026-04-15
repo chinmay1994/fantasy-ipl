@@ -293,179 +293,7 @@ def render_create_team():
     if "selected_match_id" not in st.session_state:
         st.session_state.selected_match_id = selected_match.match_id
     
-    role_emoji = {"WK": "🧤", "BAT": "🏏", "AR": "🔄", "BWL": "🎳"}
-    selected_player_ids = list(st.session_state.selected_players.keys())
-    max_selected = len(selected_player_ids) >= rules.max_players
-    
-    st.divider()
-    
-    role_tabs = st.tabs(["🧤 Wicket Keepers", "🏏 Batsmen", "🔄 All Rounders", "🎳 Bowlers"])
-    
-    roles = ["WK", "BAT", "AR", "BWL"]
-    
-    for role_idx, role in enumerate(roles):
-        with role_tabs[role_idx]:
-            role_players = [p for p in squad_players if p.role == role]
-            
-            if not role_players:
-                st.info(f"No {role} players available for this match.")
-                continue
-            
-            teams_in_role = list(set(p.real_team for p in role_players))
-            
-            team_cols = st.columns(len(teams_in_role))
-            
-            for team_idx, team in enumerate(sorted(teams_in_role)):
-                team_players = [p for p in role_players if p.real_team == team]
-                
-                with team_cols[team_idx]:
-                    st.markdown(f"### {team}")
-                    
-                    for player in team_players:
-                        is_selected = player.player_id in st.session_state.selected_players
-                        
-                        label = f"{player.player_name}"
-                        if is_selected:
-                            label = f"✅ {label}"
-                        
-                        is_disabled = max_selected and not is_selected
-                        
-                        if is_disabled:
-                            st.checkbox(label, value=is_selected, disabled=True, key=f"player_{player.player_id}")
-                        else:
-                            if st.checkbox(label, value=is_selected, key=f"player_{player.player_id}"):
-                                st.session_state.selected_players[player.player_id] = player
-                            else:
-                                if player.player_id in st.session_state.selected_players:
-                                    del st.session_state.selected_players[player.player_id]
-                                
-                                if st.session_state.captain == player.player_id:
-                                    st.session_state.captain = None
-                                if st.session_state.vice_captain == player.player_id:
-                                    st.session_state.vice_captain = None
-    
-    st.divider()
-    
-    selected_player_ids = list(st.session_state.selected_players.keys())
-    
-    right_col1, right_col2 = st.columns([3, 1])
-    
-    with right_col1:
-        role_counts = {"WK": 0, "BAT": 0, "AR": 0, "BWL": 0}
-        team_counts = {}
-        
-        for pid in selected_player_ids:
-            player = st.session_state.selected_players.get(pid)
-            if player:
-                role_counts[player.role] = role_counts.get(player.role, 0) + 1
-                team_counts[player.real_team] = team_counts.get(player.real_team, 0) + 1
-        
-        st.markdown("### Team Stats")
-        st.markdown(f"**Selected:** {len(selected_player_ids)}/{rules.max_players}")
-        
-        stat_col1, stat_col2 = st.columns(2)
-        with stat_col1:
-            st.markdown("**By Role**")
-            for role, count in role_counts.items():
-                min_req = getattr(rules, f"min_{role.lower()}")
-                status = "✅" if count >= min_req else "❌"
-                st.markdown(f"{status} {role}: {count}/{min_req}")
-        
-        with stat_col2:
-            st.markdown("**By Team**")
-            for team, count in team_counts.items():
-                status = "⚠️" if count > rules.max_from_one_team else "✅"
-                st.markdown(f"{status} {team}: {count}")
-    
-    with right_col2:
-        selected_list = []
-        for pid, player in st.session_state.selected_players.items():
-            selected_list.append({
-                "player_id": player.player_id,
-                "player_name": player.player_name,
-                "role": player.role,
-                "real_team": player.real_team,
-                "credits": player.credits,
-                "is_captain": pid == st.session_state.captain,
-                "is_vice_captain": pid == st.session_state.vice_captain,
-            })
-        
-        captain_options = ["-- Select --"] + [p["player_name"] for p in selected_list]
-        vc_options = ["-- Select --"] + [p["player_name"] for p in selected_list]
-        
-        current_captain_idx = 0
-        if st.session_state.captain:
-            for i, p in enumerate(selected_list):
-                if p["player_id"] == st.session_state.captain:
-                    current_captain_idx = i + 1
-                    break
-        
-        current_vc_idx = 0
-        if st.session_state.vice_captain:
-            for i, p in enumerate(selected_list):
-                if p["player_id"] == st.session_state.vice_captain:
-                    current_vc_idx = i + 1
-                    break
-        
-        captain_name = st.selectbox("🏆 Captain", options=captain_options, index=current_captain_idx, key="captain_select")
-        if captain_name != "-- Select --":
-            for p in selected_list:
-                if p["player_name"] == captain_name:
-                    st.session_state.captain = p["player_id"]
-                    break
-        else:
-            st.session_state.captain = None
-        
-        vc_name = st.selectbox("🎖️ Vice-Captain", options=vc_options, index=current_vc_idx, key="vc_select")
-        if vc_name != "-- Select --":
-            for p in selected_list:
-                if p["player_name"] == vc_name:
-                    st.session_state.vice_captain = p["player_id"]
-                    break
-        else:
-            st.session_state.vice_captain = None
-        
-        for p in selected_list:
-            if p["player_id"] == st.session_state.captain:
-                p["is_captain"] = True
-                p["multiplier"] = 2.0
-            elif p["player_id"] == st.session_state.vice_captain:
-                p["is_vice_captain"] = True
-                p["multiplier"] = 1.5
-            else:
-                p["multiplier"] = 1.0
-        
-        validation = validate_team(selected_list, rules)
-        
-        can_submit = (
-            validation.is_valid and
-            st.session_state.captain is not None and
-            st.session_state.vice_captain is not None
-        )
-        
-        if st.button("🚀 Submit Team", type="primary", use_container_width=True, disabled=not can_submit):
-            try:
-                entry_id = save_entry(
-                    st.session_state.username,
-                    selected_match.match_id,
-                    selected_list,
-                )
-                st.success(f"Team submitted successfully!")
-                st.session_state.selected_players = {}
-                st.session_state.captain = None
-                st.session_state.vice_captain = None
-                st.session_state.page = "📋 My Teams"
-                st.rerun()
-            except Exception as e:
-                st.error(f"Failed to submit team: {e}")
-        
-        if selected_list:
-            if not validation.is_valid:
-                for error in validation.errors:
-                    st.error(error)
-            elif len(selected_list) == rules.max_players:
-                if not st.session_state.captain or not st.session_state.vice_captain:
-                    st.warning("Select Captain & VC to submit")
+    render_player_selection_fragment(squad_players, rules, selected_match)
 
 
 def render_my_teams():
@@ -665,6 +493,188 @@ def render_all_teams():
                         multiplier = " 🎖️ (1.5x)"
                     emoji = role_emoji.get(s.role, "❓")
                     st.markdown(f"{emoji} {s.player_name} ({s.role}){multiplier}")
+
+
+@st.fragment
+def render_player_selection_fragment(squad_players, rules, selected_match):
+    role_emoji = {"WK": "🧤", "BAT": "🏏", "AR": "🔄", "BWL": "🎳"}
+    
+    st.divider()
+    
+    role_tabs = st.tabs(["🧤 Wicket Keepers", "🏏 Batsmen", "🔄 All Rounders", "🎳 Bowlers"])
+    
+    roles = ["WK", "BAT", "AR", "BWL"]
+    
+    for role_idx, role in enumerate(roles):
+        with role_tabs[role_idx]:
+            role_players = [p for p in squad_players if p.role == role]
+            
+            if not role_players:
+                st.info(f"No {role} players available for this match.")
+                continue
+            
+            teams_in_role = list(set(p.real_team for p in role_players))
+            
+            team_cols = st.columns(len(teams_in_role))
+            
+            for team_idx, team in enumerate(sorted(teams_in_role)):
+                team_players = [p for p in role_players if p.real_team == team]
+                
+                with team_cols[team_idx]:
+                    st.markdown(f"### {team}")
+                    
+                    for player in team_players:
+                        checkbox_key = f"player_{player.player_id}"
+                        is_selected = player.player_id in st.session_state.selected_players
+                        
+                        label = f"{player.player_name}"
+                        
+                        if not player.in_starting_xi:
+                            label = f"{label} ⚠️"
+                        
+                        current_count = len(st.session_state.selected_players)
+                        is_disabled = current_count >= rules.max_players and not is_selected
+                        tooltip = "Not playing in today's match" if not player.in_starting_xi else None
+                        
+                        new_state = st.checkbox(label, value=is_selected, disabled=is_disabled, key=checkbox_key, help=tooltip)
+                        
+                        if new_state != is_selected:
+                            if new_state:
+                                if current_count < rules.max_players:
+                                    st.session_state.selected_players[player.player_id] = player
+                                    st.rerun(scope="fragment")
+                            else:
+                                if player.player_id in st.session_state.selected_players:
+                                    del st.session_state.selected_players[player.player_id]
+                                if st.session_state.captain == player.player_id:
+                                    st.session_state.captain = None
+                                if st.session_state.vice_captain == player.player_id:
+                                    st.session_state.vice_captain = None
+                                st.rerun(scope="fragment")
+    
+    st.divider()
+    
+    selected_player_ids = list(st.session_state.selected_players.keys())
+    
+    right_col1, right_col2 = st.columns([3, 1])
+    
+    with right_col1:
+        role_counts = {"WK": 0, "BAT": 0, "AR": 0, "BWL": 0}
+        team_counts = {}
+        
+        for pid in selected_player_ids:
+            player = st.session_state.selected_players.get(pid)
+            if player:
+                role_counts[player.role] = role_counts.get(player.role, 0) + 1
+                team_counts[player.real_team] = team_counts.get(player.real_team, 0) + 1
+        
+        st.markdown("### Team Stats")
+        st.markdown(f"**Selected:** {len(selected_player_ids)}/{rules.max_players}")
+        
+        stat_col1, stat_col2 = st.columns(2)
+        with stat_col1:
+            st.markdown("**By Role**")
+            for role, count in role_counts.items():
+                min_req = getattr(rules, f"min_{role.lower()}")
+                status = "✅" if count >= min_req else "❌"
+                st.markdown(f"{status} {role}: {count}/{min_req}")
+        
+        with stat_col2:
+            st.markdown("**By Team**")
+            for team, count in team_counts.items():
+                status = "⚠️" if count > rules.max_from_one_team else "✅"
+                st.markdown(f"{status} {team}: {count}")
+    
+    with right_col2:
+        selected_list = []
+        for pid, player in st.session_state.selected_players.items():
+            selected_list.append({
+                "player_id": pid,
+                "player_name": player.player_name,
+                "role": player.role,
+                "real_team": player.real_team,
+                "credits": player.credits,
+                "is_captain": pid == st.session_state.captain,
+                "is_vice_captain": pid == st.session_state.vice_captain,
+            })
+        
+        captain_options = ["-- Select --"] + [p["player_name"] for p in selected_list]
+        vc_options = ["-- Select --"] + [p["player_name"] for p in selected_list]
+        
+        current_captain_idx = 0
+        if st.session_state.captain:
+            for i, p in enumerate(selected_list):
+                if p["player_id"] == st.session_state.captain:
+                    current_captain_idx = i + 1
+                    break
+        
+        current_vc_idx = 0
+        if st.session_state.vice_captain:
+            for i, p in enumerate(selected_list):
+                if p["player_id"] == st.session_state.vice_captain:
+                    current_vc_idx = i + 1
+                    break
+        
+        captain_name = st.selectbox("🏆 Captain", options=captain_options, index=current_captain_idx, key="captain_select")
+        if captain_name != "-- Select --":
+            for p in selected_list:
+                if p["player_name"] == captain_name:
+                    st.session_state.captain = p["player_id"]
+                    break
+        else:
+            st.session_state.captain = None
+        
+        vc_name = st.selectbox("🎖️ Vice-Captain", options=vc_options, index=current_vc_idx, key="vc_select")
+        if vc_name != "-- Select --":
+            for p in selected_list:
+                if p["player_name"] == vc_name:
+                    st.session_state.vice_captain = p["player_id"]
+                    break
+        else:
+            st.session_state.vice_captain = None
+    
+    selected_list = []
+    for pid, player in st.session_state.selected_players.items():
+        selected_list.append({
+            "player_id": pid,
+            "player_name": player.player_name,
+            "role": player.role,
+            "real_team": player.real_team,
+            "credits": player.credits,
+            "is_captain": pid == st.session_state.captain,
+            "is_vice_captain": pid == st.session_state.vice_captain,
+        })
+    
+    st.divider()
+    
+    validation = validate_team(selected_list, rules)
+    
+    if not validation.is_valid:
+        for error in validation.errors:
+            st.error(error)
+        submit_disabled = True
+    else:
+        submit_disabled = False
+    
+    if st.button("✅ Submit Team", disabled=submit_disabled, type="primary"):
+        players_data = []
+        for pid, player in st.session_state.selected_players.items():
+            players_data.append({
+                "player_id": pid,
+                "player_name": player.player_name,
+                "role": player.role,
+                "real_team": player.real_team,
+                "credits": player.credits,
+                "is_captain": pid == st.session_state.captain,
+                "is_vice_captain": pid == st.session_state.vice_captain,
+            })
+        
+        try:
+            entry_id = save_entry(st.session_state.username, selected_match.match_id, players_data)
+            st.success(f"Team submitted! Entry ID: {entry_id}")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Failed to submit team: {e}")
 
 
 if __name__ == "__main__":

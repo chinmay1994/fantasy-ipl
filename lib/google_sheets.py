@@ -125,7 +125,7 @@ def get_worksheet(sheet_name: str):
         return None
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_all_records(sheet_name: str) -> pd.DataFrame:
     worksheet = get_worksheet(sheet_name)
     if worksheet is None:
@@ -141,7 +141,7 @@ def get_all_records(sheet_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def get_rules() -> Rules:
     df = get_all_records("Rules")
     rules = Rules()
@@ -317,10 +317,17 @@ def get_match_squad(match_id: str) -> list[MatchSquadPlayer]:
             credits = 0.0
         
         starting_xi = row.get("InStartingXI (1/0)", "")
-        try:
-            in_xi = bool(int(starting_xi)) if starting_xi and str(starting_xi).strip() else False
-        except (ValueError, TypeError):
-            in_xi = False
+        
+        in_xi = False
+        if isinstance(starting_xi, str):
+            if starting_xi.strip() == "1":
+                in_xi = True
+            elif starting_xi.strip() == "0":
+                in_xi = False
+            elif starting_xi.strip() == "":
+                in_xi = True
+        elif starting_xi and (starting_xi == 1 or starting_xi == 1.0):
+            in_xi = True
         
         players.append(MatchSquadPlayer(
             match_id=str(row.get("MatchID", "")),
