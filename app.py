@@ -176,14 +176,90 @@ def main():
         clear_all_caches()
         st.rerun()
     
+    if "page" not in st.session_state:
+        st.session_state.page = "🏠 Home"
+    
+    if "theme" not in st.session_state:
+        st.session_state.theme = "light"
+    
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🌙 Dark Mode" if st.session_state.theme == "light" else "☀️ Light Mode", key="theme_toggle"):
+        st.session_state.theme = "dark" if st.session_state.theme == "light" else "light"
+        st.rerun()
+    
+    if st.session_state.theme == "dark":
+        st.markdown("""
+        <style>
+        .stApp {background-color: #0C2741 !important; color: #FFFFFF !important;}
+        section[data-testid="stSidebar"] {background-color: #061B2E !important; color: #FFFFFF !important;}
+        div[data-testid="stRadio"] label span {color: #FFFFFF !important;}
+        </style>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <style>
+        /* Force light background */
+        .stApp {background-color: #FFFFFF !important;}
+        
+        /* Force dark text everywhere */
+        body, .stApp, p, div, span, label, li, td, th, tr, table, thead, tbody {
+            color: #1A1A1A !important;
+        }
+        
+        /* Headers */
+        h1, h2, h3, h4, h5, h6 {
+            color: #1A1A1A !important;
+        }
+        
+        /* Sidebar */
+        section[data-testid="stSidebar"] {
+            background-color: #F0F2F6 !important;
+            color: #1A1A1A !important;
+        }
+        
+        /* Sidebar text */
+        section[data-testid="stSidebar"] p,
+        section[data-testid="stSidebar"] div,
+        section[data-testid="stSidebar"] span,
+        section[data-testid="stSidebar"] label {
+            color: #1A1A1A !important;
+        }
+        
+        /* Radio buttons */
+        div[data-testid="stRadio"] label span {
+            color: #1A1A1A !important;
+        }
+        
+        /* Button styling - light bg, dark text */
+        div.stButton > button {
+            background-color: #E8EAED !important;
+            color: #1A1A1A !important;
+            border: 1px solid #D1D5DB !important;
+        }
+        div.stButton > button:hover {
+            background-color: #D1D5DB !important;
+        }
+        
+        /* Primary button */
+        div.stButton > button[kind="primary"] {
+            background-color: #0B53FF !important;
+            color: #FFFFFF !important;
+        }
+        
+        /* Success/error/warning messages */
+        div[data-testid="stSuccess"],
+        div[data-testid="stError"],
+        div[data-testid="stWarning"] {
+            color: #1A1A1A !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+    
     if st.sidebar.button("🚪 Logout"):
         st.session_state.username = ""
         cookies["fantasy_ipl_user"] = ""
         cookies.save()
         st.rerun()
-    
-    if "page" not in st.session_state:
-        st.session_state.page = "🏠 Home"
     
     pages = ["🏠 Home", "📝 Create Team", "📋 My Teams", "🏆 All Teams"]
     current_index = pages.index(st.session_state.page) if st.session_state.page in pages else 0
