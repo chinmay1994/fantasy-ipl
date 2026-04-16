@@ -5,6 +5,342 @@ import hmac
 import base64
 import time
 from streamlit_cookies_manager import EncryptedCookieManager
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&display=swap');
+
+:root {
+  /* Primary Palette */
+  --cobalt: #0B53FF;
+  --cobalt-hover: #0A4BCC;
+  --cobalt-active: #083899;
+  --cobalt-t1: #99BBFF;
+  --cobalt-t2: #6699FF;
+  --cobalt-t3: #3377FF;
+  --deep-blue: #0C2741;
+  --peppermint: #70F9C4;
+  --citrus: #D9FA91;
+  --soft-white: #F5F5F5;
+  --dark-grey: #323232;
+  --white: #FFFFFF;
+  
+  /* Typography */
+  --font-brand: 'Manrope', sans-serif;
+  
+  /* Spacing / Radius */
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-pill: 999px;
+  
+  /* Shadows */
+  --shadow-card: 0 2px 12px rgba(12, 39, 65, 0.10);
+}
+
+html, body, .stApp {
+  font-family: var(--font-brand) !important;
+  background-color: var(--soft-white) !important;
+  color: var(--dark-grey) !important;
+}
+
+/* Default text color for all elements */
+p, span, div, label, li, td, th {
+  color: var(--dark-grey) !important;
+}
+
+/* Streamlit specific text elements */
+.stMarkdown p, .stText p, .stTextInput label, .stTextArea label, 
+.stSelectbox label, .stNumberInput label, .stDateInput label, 
+.stTimeInput label, .stSlider label {
+  color: var(--dark-grey) !important;
+}
+
+/* Form field labels */
+div[data-testid="stTextInput"] label,
+div[data-testid="stTextArea"] label,
+div[data-testid="stSelectbox"] label,
+div[data-testid="stNumberInput"] label,
+div[data-testid="stDateInput"] label,
+div[data-testid="stTimeInput"] label {
+  color: var(--dark-grey) !important;
+  font-weight: 500 !important;
+}
+
+/* Button text */
+div.stButton > button {
+  color: var(--white) !important;
+}
+
+/* Sidebar button text */
+section[data-testid="stSidebar"] div.stButton > button {
+  color: var(--white) !important;
+}
+
+/* Sidebar Logout button text */
+section[data-testid="stSidebar"] button[key="logout_button"] {
+  color: var(--deep-blue) !important;
+}
+
+/* Page title */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--deep-blue) !important;
+  font-family: var(--font-brand) !important;
+}
+
+/* Login/Signup Container */
+.login-container {
+  background: var(--white);
+  padding: 40px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+/* Primary Button - Cobalt */
+div.stButton > button[kind="primary"] {
+  background-color: var(--cobalt) !important;
+  color: var(--white) !important;
+  border-radius: var(--radius-pill) !important;
+  font-family: var(--font-brand) !important;
+  font-weight: 500 !important;
+  border: none !important;
+  padding: 12px 24px !important;
+}
+div.stButton > button[kind="primary"]:hover {
+  background-color: var(--cobalt-hover) !important;
+}
+
+/* Secondary Button */
+div.stButton > button[kind="secondary"] {
+  background-color: transparent !important;
+  color: var(--cobalt) !important;
+  border: 1.5px solid var(--cobalt) !important;
+  border-radius: var(--radius-pill) !important;
+  font-family: var(--font-brand) !important;
+  font-weight: 500 !important;
+}
+div.stButton > button[kind="secondary"]:hover {
+  background-color: rgba(11, 83, 255, 0.08) !important;
+}
+
+/* All buttons pill-shaped */
+div.stButton > button {
+  border-radius: var(--radius-pill) !important;
+  font-family: var(--font-brand) !important;
+}
+
+/* Form inputs */
+div.stTextInput > div > div > input,
+div.stTextInput > div > div > div > input {
+  background-color: var(--white) !important;
+  border: 1px solid #D1D5DB !important;
+  border-radius: var(--radius-sm) !important;
+  font-family: var(--font-brand) !important;
+  color: var(--dark-grey) !important;
+}
+div.stTextInput > div > div > input::placeholder,
+div.stTextInput > div > div > div > input::placeholder {
+  color: #9CA3AF !important;
+  opacity: 1 !important;
+}
+div.stTextInput > div > div > input:focus,
+div.stTextInput > div > div > div > input:focus {
+  border-color: var(--cobalt) !important;
+  box-shadow: 0 0 0 2px rgba(11, 83, 255, 0.2) !important;
+}
+
+/* Password input same as text input */
+div.stTextInput > div > div > input[type="password"],
+div.stTextInput > div > div > div > input[type="password"] {
+  background-color: var(--white) !important;
+  border: 1px solid #D1D5DB !important;
+  border-radius: var(--radius-sm) !important;
+  font-family: var(--font-brand) !important;
+}
+
+/* Tabs */
+div.stTabs > div > button[role="tab"][aria-selected="true"] {
+  color: var(--cobalt) !important;
+  border-bottom: 2px solid var(--cobalt) !important;
+}
+div.stTabs > div > button[role="tab"] {
+  font-family: var(--font-brand) !important;
+  font-weight: 500 !important;
+}
+
+/* Sidebar - Deep Blue */
+section[data-testid="stSidebar"] {
+  background-color: var(--deep-blue) !important;
+  width: 300px !important;
+  min-width: 300px !important;
+}
+section[data-testid="stSidebar"] * {
+  font-family: var(--font-brand) !important;
+}
+section[data-testid="stSidebar"] .stMarkdown,
+section[data-testid="stSidebar"] .stText,
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3,
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] div,
+section[data-testid="stSidebar"] label {
+  color: var(--white) !important;
+}
+
+/* Sidebar radio navigation - KEEP VISIBLE */
+section[data-testid="stSidebar"] div.stRadio {
+  background-color: transparent !important;
+}
+section[data-testid="stSidebar"] div.stRadio > label {
+  color: var(--white) !important;
+}
+section[data-testid="stSidebar"] div.stRadio > label > span {
+  color: var(--white) !important;
+}
+
+/* Hide sidebar collapse button */
+button[title*="Collapse"],
+button[title*="Expand"],
+header + div button:first-child,
+button[aria-label*="sidebar"],
+section[data-testid="stSidebar"] > button,
+div[data-testid="stSidebarCollapseButton"],
+button[data-testid="stSidebarCollapseButton"] {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Hide ALL keyboard shortcut help popups */
+div[data-testid="stKeyboardShortcutHelpMessage"],
+div[class*="KeyboardShortcutHelpMessage"],
+div[role="dialog"],
+div[class*="stKeyHint"] {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Sidebar Buttons */
+section[data-testid="stSidebar"] div.stButton > button {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: var(--white) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+}
+section[data-testid="stSidebar"] div.stButton > button:hover {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Sidebar Logout button - Peppermint */
+section[data-testid="stSidebar"] button[key="logout_button"] {
+  background-color: var(--peppermint) !important;
+  color: var(--deep-blue) !important;
+  border: none !important;
+  font-weight: 600 !important;
+}
+section[data-testid="stSidebar"] button[key="logout_button"]:hover {
+  background-color: #5EE5AD !important;
+}
+
+/* Sidebar Refresh button */
+section[data-testid="stSidebar"] button[key="refresh_button"] {
+  background-color: var(--cobalt-t1) !important;
+  color: var(--deep-blue) !important;
+  border: none !important;
+}
+
+/* Success/Warning/Error messages */
+div.stAlert {
+  border-radius: var(--radius-sm) !important;
+  font-family: var(--font-brand) !important;
+}
+
+/* Card containers */
+div.stContainer, div.stCard {
+  background-color: var(--white) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+/* Dataframes/Tables */
+div[data-testid="stDataFrame"] {
+  border-radius: var(--radius-sm) !important;
+}
+div[data-testid="stDataFrame"] td,
+div[data-testid="stDataFrame"] th,
+div[data-testid="stDataFrame"] div {
+  color: var(--dark-grey) !important;
+}
+
+/* Headers in sidebar */
+section[data-testid="stSidebar"] .stSuccess {
+  background-color: var(--peppermint) !important;
+  color: var(--deep-blue) !important;
+}
+
+/* Expanders */
+div.stExpander {
+  border-radius: var(--radius-sm) !important;
+  border: 1px solid #E5E7EB !important;
+}
+
+/* Selectbox */
+div.stSelectbox > div > div {
+  background-color: var(--white) !important;
+  border: 1px solid #D1D5DB !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+/* Slider */
+div.stSlider > div > div > div[role="slider"] {
+  background-color: var(--cobalt) !important;
+}
+
+/* Checkbox */
+div.stCheckbox > label > div[role="checkbox"] {
+  border-color: #D1D5DB !important;
+}
+div.stCheckbox > label > div[role="checkbox"][aria-checked="true"] {
+  background-color: var(--cobalt) !important;
+  border-color: var(--cobalt) !important;
+}
+
+/* Radio buttons */
+div.stRadio > div > label > div[role="radio"] {
+  border-color: #D1D5DB !important;
+}
+div.stRadio > div > label > div[role="radio"][aria-checked="true"] {
+  background-color: var(--cobalt) !important;
+  border-color: var(--cobalt) !important;
+}
+
+/* Metric cards */
+div[data-testid="stMetricValue"] {
+  font-family: var(--font-brand) !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--soft-white);
+}
+::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+}
+
+/* Hide Streamlit's default hamburger menu styling overrides */
+header[data-testid="stHeader"] {
+  background-color: var(--white) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 from lib.google_sheets import (
     get_matches,
     get_upcoming_matches,
@@ -172,11 +508,11 @@ def main():
     
     st.sidebar.success(f"Logged in as: **{st.session_state.username}**")
     
-    if st.sidebar.button("🔄 Refresh Data"):
+    if st.sidebar.button("🔄 Refresh Data", key="refresh_button"):
         clear_all_caches()
         st.rerun()
     
-    if st.sidebar.button("🚪 Logout"):
+    if st.sidebar.button("🚪 Logout", key="logout_button"):
         st.session_state.username = ""
         cookies["fantasy_ipl_user"] = ""
         cookies.save()
