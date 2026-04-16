@@ -12,6 +12,7 @@ from lib.google_sheets import (
     get_all_teams_for_match,
     get_match_squad,
     get_player_points,
+    get_all_player_points,
     save_entry,
     delete_entry,
     entry_exists,
@@ -558,6 +559,50 @@ def render_all_teams():
 def render_player_selection_fragment(squad_players, rules, selected_match):
     role_emoji = {"WK": "🧤", "BAT": "🏏", "AR": "🔄", "BWL": "🎳"}
     
+    all_player_points = get_all_player_points()
+    
+    player_tournament_points = {}
+    player_last_5_matches = {}
+    
+    if not all_player_points.empty and "PlayerID" in all_player_points.columns and "TotalPts" in all_player_points.columns:
+        all_player_points["TotalPts"] = pd.to_numeric(all_player_points["TotalPts"], errors="coerce").fillna(0)
+        
+        all_matches = get_matches()
+        match_times = {m.match_id: m.start_time for m in all_matches}
+        
+        for player in squad_players:
+            player_data = all_player_points[all_player_points["PlayerID"] == player.player_id].copy()
+            if not player_data.empty:
+                player_data["match_time"] = player_data["MatchID"].apply(
+                    lambda x: match_times.get(str(x)) if match_times.get(str(x)) else None
+                )
+                player_data = player_data.sort_values("match_time", na_position="last")
+                
+                total_pts = player_data["TotalPts"].sum()
+                player_tournament_points[player.player_id] = total_pts
+                
+                past_matches = player_data[player_data["match_time"].notna() & (player_data["match_time"] < now_ist())]
+                last_5 = past_matches.tail(5)
+                match_details = []
+                for _, row in last_5.iterrows():
+                    match_id = str(row.get("MatchID", ""))
+                    pts = float(row.get("TotalPts", 0))
+                    runs = int(row.get("Runs", 0) or 0)
+                    wkts = int(row.get("Wickets", 0) or 0)
+                    catches = int(row.get("Catches", 0) or 0)
+                    
+                    stats = []
+                    if runs > 0:
+                        stats.append(f"{runs}r")
+                    if wkts > 0:
+                        stats.append(f"{wkts}w")
+                    if catches > 0:
+                        stats.append(f"{catches}c")
+                    
+                    match_details.append(f"{match_id}: {pts:.1f}pts ({', '.join(stats)})" if stats else f"{match_id}: {pts:.1f}pts")
+                
+                player_last_5_matches[player.player_id] = match_details
+    
     st.divider()
     
     role_tabs = st.tabs(["🧤 Wicket Keepers", "🏏 Batsmen", "🔄 All Rounders", "🎳 Bowlers"])
@@ -567,6 +612,7 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
     for role_idx, role in enumerate(roles):
         with role_tabs[role_idx]:
             role_players = [p for p in squad_players if p.role == role]
+            role_players.sort(key=lambda p: player_tournament_points.get(p.player_id, 0), reverse=True)
             
             if not role_players:
                 st.info(f"No {role} players available for this match.")
@@ -586,14 +632,23 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
                         checkbox_key = f"player_{player.player_id}"
                         is_selected = player.player_id in st.session_state.selected_players
                         
-                        label = f"{player.player_name}"
+                        tourney_pts = player_tournament_points.get(player.player_id, 0)
+                        label = f"{player.player_name} ({tourney_pts:.0f} pts)"
                         
                         if not player.in_starting_xi:
                             label = f"{label} ⚠️"
                         
+                        last_5 = player_last_5_matches.get(player.player_id, [])
+                        tooltip_parts = []
+                        if not player.in_starting_xi:
+                            tooltip_parts.append("Not playing in today's match")
+                        if last_5:
+                            tooltip_parts.append("Last 5 matches:")
+                            tooltip_parts.extend(last_5)
+                        tooltip = "\n".join(tooltip_parts) if tooltip_parts else None
+                        
                         current_count = len(st.session_state.selected_players)
                         is_disabled = current_count >= rules.max_players and not is_selected
-                        tooltip = "Not playing in today's match" if not player.in_starting_xi else None
                         
                         new_state = st.checkbox(label, value=is_selected, disabled=is_disabled, key=checkbox_key, help=tooltip)
                         

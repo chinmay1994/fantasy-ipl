@@ -98,6 +98,7 @@ def clear_all_caches():
     get_match_squad.clear()
     get_entries.clear()
     get_player_points.clear()
+    get_all_player_points.clear()
 
 
 def get_spreadsheet():
@@ -561,6 +562,12 @@ def delete_entry(entry_id: str):
 def get_player_points(match_id: str) -> pd.DataFrame:
     df = get_all_records("PlayerPoints")
     return df[df["MatchID"] == match_id]
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_all_player_points() -> pd.DataFrame:
+    df = get_all_records("PlayerPoints")
+    return df
 
 
 def get_all_teams_for_match(match_id: str) -> list[FantasyTeam]:
