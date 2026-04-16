@@ -590,3 +590,35 @@ def get_all_teams_for_match(match_id: str) -> list[FantasyTeam]:
         ))
     
     return teams
+
+
+import bcrypt
+
+def get_users() -> pd.DataFrame:
+    return get_all_records("Users")
+
+
+def add_user(username: str, password: str) -> bool:
+    ws = get_spreadsheet().worksheet("Users")
+    users = ws.get_all_values()
+    
+    for row in users[1:]:
+        if row[0].lower() == username.lower():
+            return False
+    
+    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    ws.append_row([username, hashed], value_input_option="USER_ENTERED")
+    clear_all_caches()
+    return True
+
+
+def verify_user(username: str, password: str) -> bool:
+    ws = get_spreadsheet().worksheet("Users")
+    users = ws.get_all_values()
+    
+    for row in users[1:]:
+        if row[0].lower() == username.lower():
+            stored_hash = row[1]
+            return bcrypt.checkpw(password.encode(), stored_hash.encode())
+    
+    return False

@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+import hmac
+import base64
+import time
+from streamlit_cookies_manager import EncryptedCookieManager
 from lib.google_sheets import (
     get_matches,
     get_upcoming_matches,
@@ -20,9 +24,36 @@ from lib.google_sheets import (
     clear_all_caches,
     now_ist,
     is_match_live,
+    verify_user,
+    add_user,
 )
 from lib.validators import validate_team, get_team_stats
 from lib.scoring import calculate_team_total, calculate_team_with_player_scores
+
+
+SECRET_KEY = "fantasy_ipl_secret_key_2024"
+
+def create_session_token(username: str) -> str:
+    payload = f"{username}|{int(time.time())}"
+    signature = hmac.new(SECRET_KEY.encode(), payload.encode(), "sha256").hexdigest()[:16]
+    token = f"{payload}|{signature}"
+    return base64.b64encode(token.encode()).decode()
+
+def verify_session_token(token: str) -> str | None:
+    try:
+        decoded = base64.b64decode(token).decode()
+        parts = decoded.split("|")
+        if len(parts) != 3:
+            return None
+        username, timestamp, signature = parts
+        expected_sig = hmac.new(SECRET_KEY.encode(), f"{username}|{timestamp}".encode(), "sha256").hexdigest()[:16]
+        if signature != expected_sig:
+            return None
+        if int(time.time()) - int(timestamp) > 86400 * 30:
+            return None
+        return username
+    except:
+        return None
 
 
 st.set_page_config(
@@ -47,6 +78,19 @@ if "captain" not in st.session_state:
 if "vice_captain" not in st.session_state:
     st.session_state.vice_captain = None
 
+COOKIE_PASSWORD = "fantasy_ipl_secret_2024"
+
+cookies = EncryptedCookieManager(prefix="ipl-di/", password=COOKIE_PASSWORD)
+if not cookies.ready():
+    st.stop()
+
+if not st.session_state.username:
+    stored_token = cookies.get("fantasy_ipl_user")
+    if stored_token:
+        username = verify_session_token(stored_token)
+        if username:
+            st.session_state.username = username
+
 
 def main():
     st.title("🏏 Fantasy IPL")
@@ -55,22 +99,87 @@ def main():
         with st.container():
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
-                st.subheader("Enter your username to continue")
-                username = st.text_input(
-                    "Username",
-                    placeholder="Enter your username",
-                    label_visibility="collapsed",
-                    key="username_input",
-                )
-                if username:
-                    st.session_state.username = username
-                    st.rerun()
+                tab_login, tab_signup = st.tabs(["Login", "Sign Up"])
+                
+                with tab_login:
+                    st.subheader("Enter your username to continue")
+                    with st.form("login_form"):
+                        username = st.text_input(
+                            "Username",
+                            placeholder="Enter your username",
+                            label_visibility="collapsed",
+                            key="username_input",
+                        )
+                        password = st.text_input(
+                            "Password",
+                            type="password",
+                            placeholder="Enter your password",
+                            label_visibility="collapsed",
+                            key="password_input",
+                        )
+                        if st.form_submit_button("Login", use_container_width=True):
+                            if username and password:
+                                if verify_user(username, password):
+                                    st.session_state.username = username
+                                    token = create_session_token(username)
+                                    cookies["fantasy_ipl_user"] = token
+                                    cookies.save()
+                                    st.rerun()
+                                else:
+                                    st.error("Invalid username or password")
+                            elif not username:
+                                st.warning("Please enter your username")
+                            elif not password:
+                                st.warning("Please enter your password")
+                
+                with tab_signup:
+                    st.subheader("Create a new account")
+                    with st.form("signup_form"):
+                        new_username = st.text_input(
+                            "Username",
+                            placeholder="Choose a username",
+                            label_visibility="collapsed",
+                            key="signup_username",
+                        )
+                        new_password = st.text_input(
+                            "Password",
+                            type="password",
+                            placeholder="Choose a password",
+                            label_visibility="collapsed",
+                            key="signup_password",
+                        )
+                        confirm_password = st.text_input(
+                            "Confirm Password",
+                            type="password",
+                            placeholder="Confirm your password",
+                            label_visibility="collapsed",
+                            key="signup_confirm",
+                        )
+                        if st.form_submit_button("Sign Up", use_container_width=True):
+                            if not new_username:
+                                st.warning("Please enter a username")
+                            elif not new_password:
+                                st.warning("Please enter a password")
+                            elif not confirm_password:
+                                st.warning("Please confirm your password")
+                            elif new_password != confirm_password:
+                                st.error("Passwords do not match")
+                            elif add_user(new_username, new_password):
+                                st.success("Account created! Please login.")
+                            else:
+                                st.error("Username already exists")
         st.stop()
     
     st.sidebar.success(f"Logged in as: **{st.session_state.username}**")
     
     if st.sidebar.button("🔄 Refresh Data"):
         clear_all_caches()
+        st.rerun()
+    
+    if st.sidebar.button("🚪 Logout"):
+        st.session_state.username = ""
+        cookies["fantasy_ipl_user"] = ""
+        cookies.save()
         st.rerun()
     
     if "page" not in st.session_state:
