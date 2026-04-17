@@ -90,7 +90,6 @@ st.set_page_config(
 st.markdown("""
 <style>
     .block-container {padding-top: 0.5rem; padding-bottom: 0.5rem;}
-    header[data-testid="stHeader"] {height: 0px; min-height: 0px; display: none;}
     div[data-testid="stToolbar"] {top: 0px;}
 </style>
 """, unsafe_allow_html=True)
