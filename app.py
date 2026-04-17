@@ -33,6 +33,26 @@ from lib.scoring import calculate_team_total, calculate_team_with_player_scores
 
 SECRET_KEY = "fantasy_ipl_secret_key_2024"
 
+
+@st.fragment(run_every=1)
+def render_home_countdown():
+    if "home_countdown" not in st.session_state:
+        st.session_state.home_countdown = 60
+    
+    remaining = st.session_state.home_countdown
+    remaining = max(0, remaining - 1)
+    st.session_state.home_countdown = remaining
+    
+    if remaining == 0:
+        st.session_state.home_countdown = 60
+        clear_all_caches()
+        try:
+            st.rerun(scope="fragment")
+        except:
+            st.rerun()
+    else:
+        st.caption(f"🔄 Auto-refresh in {remaining}s")
+
 def create_session_token(username: str) -> str:
     payload = f"{username}|{int(time.time())}"
     signature = hmac.new(SECRET_KEY.encode(), payload.encode(), "sha256").hexdigest()[:16]
@@ -233,6 +253,8 @@ def get_leaderboard_position(match_id: str, username: str, scoring_rules) -> tup
 
 
 def render_home():
+    render_home_countdown()
+    
     live_matches = get_live_matches()
     completed_matches = get_completed_matches()
     
@@ -246,44 +268,67 @@ def render_home():
     
     if live_matches:
         st.header("🔴 Live Matches")
+        
         for match in live_matches:
             st.subheader(f"📺 {match.match_name}")
             st.caption(f"Status: {match.status}")
             
-            if not user_entries.empty:
-                entry = user_entries[user_entries["MatchID"].astype(str) == match.match_id]
-                if not entry.empty:
-                    entry_id = str(entry.iloc[0]["EntryID"])
-                    selections = get_team_selections(entry_id)
-                    player_points = get_player_points(match.match_id)
-                    position, total_players = get_leaderboard_position(match.match_id, st.session_state.username, scoring_rules)
-                    
-                    if player_points is not None and not player_points.empty:
-                        total_score, player_scores = calculate_team_with_player_scores(selections, player_points, scoring_rules)
+            teams = get_all_teams_for_match(match.match_id)
+            player_points = get_player_points(match.match_id)
+            
+            teams_with_scores = []
+            for team in teams:
+                selections = get_team_selections(team.entry_id)
+                
+                if player_points is not None and not player_points.empty:
+                    total_points = calculate_team_total(selections, player_points, scoring_rules)
+                else:
+                    total_points = 0.0
+                
+                teams_with_scores.append((team.user_name, total_points, selections, team.entry_id))
+            
+            teams_with_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            if not teams_with_scores:
+                st.info("No teams submitted for this match yet.")
+            else:
+                for rank, (username, total_points, selections, entry_id) in enumerate(teams_with_scores, 1):
+                    with st.expander(f"#{rank} 👤 {username} - {total_points:.2f} pts"):
+                        role_emoji = {"WK": "🧤", "BAT": "🏏", "AR": "🔄", "BWL": "🎳"}
                         
-                        with st.expander(f"📊 Your Score: {total_score:.2f} pts (Rank: #{position}/{total_players})"):
-                            role_emoji = {"WK": "🧤", "BAT": "🏏", "AR": "🔄", "BWL": "🎳"}
+                        is_own_team = username == st.session_state.username
+                        
+                        if player_points is not None and not player_points.empty:
+                            _, player_scores = calculate_team_with_player_scores(selections, player_points, scoring_rules)
+                            player_scores_dict = {ps.player_name: ps for ps in player_scores}
                             
                             player_data = []
-                            for ps in sorted(player_scores, key=lambda x: -x.points):
+                            for s in sorted(selections, key=lambda x: x.pick_no):
                                 multiplier = ""
-                                if ps.is_captain:
-                                    multiplier = " (C)"
-                                elif ps.is_vice_captain:
-                                    multiplier = " (VC)"
+                                if s.is_captain:
+                                    multiplier = " 🏆 (2x)" if is_own_team else " (C)"
+                                elif s.is_vice_captain:
+                                    multiplier = " 🎖️ (1.5x)" if is_own_team else " (VC)"
                                 
-                                stats = []
-                                if ps.runs > 0:
-                                    stats.append(f"{ps.runs} runs")
-                                if ps.wickets > 0:
-                                    stats.append(f"{ps.wickets} wkts")
-                                if ps.catches > 0:
-                                    stats.append(f"{ps.catches} ct")
+                                ps = player_scores_dict.get(s.player_name)
+                                if ps:
+                                    points = ps.points
+                                    stats = []
+                                    if ps.runs > 0:
+                                        stats.append(f"{ps.runs} runs")
+                                    if ps.wickets > 0:
+                                        stats.append(f"{ps.wickets} wkts")
+                                    if ps.catches > 0:
+                                        stats.append(f"{ps.catches} ct")
+                                    stats_str = ", ".join(stats) if stats else "-"
+                                else:
+                                    points = 0.0
+                                    stats_str = "-"
                                 
                                 player_data.append({
-                                    "Player": f"{role_emoji.get(ps.role, '❓')} {ps.player_name}{multiplier}",
-                                    "Pts": f"{ps.points:.1f}",
-                                    "Stats": ", ".join(stats) if stats else "-",
+                                    "Player": f"{role_emoji.get(s.role, '❓')} {s.player_name}{multiplier}",
+                                    "Pts": f"{points:.1f}",
+                                    "Stats": stats_str,
                                 })
                             
                             st.dataframe(
@@ -291,8 +336,16 @@ def render_home():
                                 hide_index=True,
                                 use_container_width=True,
                             )
-                    else:
-                        st.info("Waiting for points data...")
+                        else:
+                            for s in sorted(selections, key=lambda x: x.pick_no):
+                                multiplier = ""
+                                if s.is_captain:
+                                    multiplier = " 🏆 (2x)" if is_own_team else " (C)"
+                                elif s.is_vice_captain:
+                                    multiplier = " 🎖️ (1.5x)" if is_own_team else " (VC)"
+                                emoji = role_emoji.get(s.role, "❓")
+                                st.markdown(f"{emoji} {s.player_name} ({s.role}){multiplier}")
+            
             st.divider()
     else:
         st.header("🏠 Dashboard")
@@ -569,7 +622,7 @@ def render_all_teams():
     match = all_matches_sorted[current_idx]
     teams = get_all_teams_for_match(match.match_id)
     
-    col_prev, col_title, col_next = st.columns([1, 3, 1])
+    col_prev, col_title, col_next = st.columns([1, 2, 1])
     
     with col_prev:
         if st.button("⬅️ Prev", disabled=current_idx == 0, key="all_teams_prev"):
@@ -856,7 +909,6 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
                             if new_state:
                                 if current_count < rules.max_players:
                                     st.session_state.selected_players[player.player_id] = player
-                                    st.rerun()
                             else:
                                 if player.player_id in st.session_state.selected_players:
                                     del st.session_state.selected_players[player.player_id]
@@ -864,6 +916,9 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
                                     st.session_state.captain = None
                                 if st.session_state.vice_captain == player.player_id:
                                     st.session_state.vice_captain = None
+                            try:
+                                st.rerun(scope="fragment")
+                            except Exception:
                                 st.rerun()
             
             if num_teams < 3:
