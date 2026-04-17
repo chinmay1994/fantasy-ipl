@@ -110,6 +110,9 @@ if "captain" not in st.session_state:
 if "vice_captain" not in st.session_state:
     st.session_state.vice_captain = None
 
+if "is_submitting" not in st.session_state:
+    st.session_state.is_submitting = False
+
 COOKIE_PASSWORD = "fantasy_ipl_secret_2024"
 
 cookies = EncryptedCookieManager(prefix="ipl-di/", password=COOKIE_PASSWORD)
@@ -919,6 +922,7 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
                         no_wk_without_ar = role_counts.get('AR', 0) >= 4 and role_counts.get('WK', 0) == 0 and player.role == 'AR' and not is_selected
                         
                         is_disabled = (
+                            (st.session_state.is_submitting) or
                             (current_count >= rules.max_players and not is_selected) or
                             (role_at_max and not is_selected) or
                             (team_at_max and not is_selected) or
@@ -994,10 +998,13 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
                         on_change=update_vc, args=(role,)        # FIX #4
                     )
 
+                    def set_submitting():
+                        st.session_state.is_submitting = True
+
                     st.divider()
                     if not validation.is_valid:
                         st.error(f"{len(validation.errors)} issues")
-                    if st.button("✅ Submit Team", disabled=not validation.is_valid, type="primary", key=f"submit_btn_{role}"):
+                    if st.button("✅ Submit Team", disabled=not validation.is_valid or st.session_state.is_submitting, type="primary", key=f"submit_btn_{role}", on_click=set_submitting):
                         players_data = []
                         for pid, player in st.session_state.selected_players.items():
                             players_data.append({
@@ -1011,10 +1018,12 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
                             })
                         try:
                             entry_id = save_entry(st.session_state.username, selected_match.match_id, players_data)
+                            st.session_state.is_submitting = False
                             st.session_state.page = "📋 My Teams"
                             st.success(f"Team submitted! Entry ID: {entry_id}")
                             st.rerun()
                         except Exception as e:
+                            st.session_state.is_submitting = False
                             st.error(f"Failed to submit team: {e}")
 
 
