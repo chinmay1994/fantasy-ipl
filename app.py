@@ -83,7 +83,7 @@ def verify_session_token(token: str) -> str | None:
 
 st.set_page_config(
     page_title="Fantasy IPL",
-    page_icon="🏏",
+    page_icon="https://freesvg.org/img/1526511264.png",
     layout="wide",
 )
 
