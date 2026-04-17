@@ -77,9 +77,9 @@ class FantasyTeam:
 class Rules:
     max_players: int = 11
     min_wk: int = 1
-    min_bat: int = 1
+    min_bat: int = 3
     min_ar: int = 1
-    min_bwl: int = 1
+    min_bwl: int = 3
     max_from_one_team: int = 7
     salary_cap: float = 100.0
     captain_multiplier: float = 2.0

@@ -600,16 +600,25 @@ def get_users() -> pd.DataFrame:
 
 def add_user(username: str, password: str) -> bool:
     ws = get_spreadsheet().worksheet("Users")
-    users = ws.get_all_values()
     
-    for row in users[1:]:
-        if row[0].lower() == username.lower():
-            return False
-    
-    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-    ws.append_row([username, hashed], value_input_option="USER_ENTERED")
-    clear_all_caches()
-    return True
+    try:
+        users = ws.get_all_values()
+        
+        for row in users[1:]:
+            if row[0].lower() == username.lower():
+                return False
+        
+        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        ws.append_row([username, hashed], value_input_option="USER_ENTERED")
+        clear_all_caches()
+        return True
+    except Exception as e:
+        print(f"Error adding user: {e}")
+        users = ws.get_all_values()
+        for row in users[1:]:
+            if row[0].lower() == username.lower():
+                return False
+        raise e
 
 
 def verify_user(username: str, password: str) -> bool:
