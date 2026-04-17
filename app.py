@@ -464,8 +464,6 @@ def render_create_team():
             st.session_state.vice_captain = None
             st.rerun()
     
-    st.divider()
-    
     existing_entry = entry_exists(st.session_state.username, selected_match.match_id)
     
     rules = get_rules()
@@ -785,7 +783,6 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
     validation = validate_team(selected_list, rules)
     
     st.markdown("---")
-    validation_bar_cols = st.columns(8)
     role_counts = {"WK": 0, "BAT": 0, "AR": 0, "BWL": 0}
     team_counts = {}
     for pid in st.session_state.selected_players:
@@ -794,40 +791,16 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
             role_counts[p.role] = role_counts.get(p.role, 0) + 1
             team_counts[p.real_team] = team_counts.get(p.real_team, 0) + 1
     
-    max_team_count = max(team_counts.values()) if team_counts else 0
-    violating_team = ""
-    if max_team_count > 7:
-        for team, count in team_counts.items():
-            if count > 7:
-                violating_team = team
-                break
-        team_tooltip = f"Max 7 allowed from one team. You have {max_team_count} from {violating_team}"
-    else:
-        team_tooltip = f"{max_team_count}/7"
-    
-    checks = [
-        ("Players", "👥", len(selected_list), len(selected_list) == 11, f"{len(selected_list)}/11"),
-        ("WK", "🧤", role_counts.get('WK', 0), role_counts.get('WK', 0) >= 1, f"{role_counts.get('WK', 0)}/1"),
-        ("BAT", "🏏", role_counts.get('BAT', 0), role_counts.get('BAT', 0) >= 3, f"{role_counts.get('BAT', 0)}/3"),
-        ("AR", "🔄", role_counts.get('AR', 0), role_counts.get('AR', 0) >= 1, f"{role_counts.get('AR', 0)}/1"),
-        ("BWL", "🎳", role_counts.get('BWL', 0), role_counts.get('BWL', 0) >= 3, f"{role_counts.get('BWL', 0)}/3"),
-        ("Team", "🏟️", max_team_count, max_team_count <= 7, team_tooltip),
-        ("C", "👑", 1 if st.session_state.captain else 0, st.session_state.captain is not None, "Captain"),
-        ("VC", "🎖️", 1 if st.session_state.vice_captain else 0, st.session_state.vice_captain is not None, "Vice-Capt"),
-    ]
-    
-    for i, (label, icon, value, is_valid, tooltip) in enumerate(checks):
-        color = "#22c55e" if is_valid else "#ef4444"
-        opacity = "1" if is_valid else "0.5"
-        with validation_bar_cols[i]:
-            if label == "Players":
-                st.markdown(f"<span title='{tooltip}' style='font-size:20px; font-weight:bold; color:{color}'>{value}/11</span>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<span title='{tooltip}' style='font-size:24px; opacity:{opacity}; color:{color}'>{icon}</span>", unsafe_allow_html=True)
-    
-    st.divider()
+    bat_bwl_sum = role_counts.get('BAT', 0) + role_counts.get('BWL', 0)
+    wk_ar_sum = role_counts.get('WK', 0) + role_counts.get('AR', 0)
+    bat_ar_wk_sum = role_counts.get('BAT', 0) + role_counts.get('AR', 0) + role_counts.get('WK', 0)
+    bwl_ar_wk_sum = role_counts.get('BWL', 0) + role_counts.get('AR', 0) + role_counts.get('WK', 0)
+    bat_ar_bwl_sum = role_counts.get('BAT', 0) + role_counts.get('AR', 0) + role_counts.get('BWL', 0)
+    wk_bat_bwl_sum = role_counts.get('WK', 0) + role_counts.get('BAT', 0) + role_counts.get('BWL', 0)
     
     role_tabs = st.tabs(["🧤 Wicket Keepers", "🏏 Batsmen", "🔄 All Rounders", "🎳 Bowlers"])
+    
+    roles = ["WK", "BAT", "AR", "BWL"]
     
     captain_options = ["-- Select C --"] + [p["player_name"] for p in selected_list]
     vc_options = ["-- Select VC --"] + [p["player_name"] for p in selected_list]
@@ -865,9 +838,12 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
             
             for team_idx, team in enumerate(sorted(teams_in_role)):
                 team_players = [p for p in role_players if p.real_team == team]
+                team_count = team_counts.get(team, 0)
+                team_at_max = team_count >= 7
                 
                 with team_cols[team_idx]:
-                    st.markdown(f"### {team}")
+                    team_color = "#ef4444" if team_at_max else "inherit"
+                    st.markdown(f"### {team} <span style='color:{team_color}'>({team_count}/7)</span>", unsafe_allow_html=True)
                     
                     for player in team_players:
                         checkbox_key = f"player_{player.player_id}"
@@ -897,11 +873,21 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
                             if p:
                                 role_counts[p.role] = role_counts.get(p.role, 0) + 1
                         
+                        bat_bwl_sum = role_counts.get('BAT', 0) + role_counts.get('BWL', 0)
+                        wk_ar_sum = role_counts.get('WK', 0) + role_counts.get('AR', 0)
+                        
                         current_count = len(st.session_state.selected_players)
                         max_per_role = 6
                         role_at_max = role_counts.get(player.role, 0) >= max_per_role
                         
-                        is_disabled = (current_count >= rules.max_players and not is_selected) or (role_at_max and not is_selected)
+                        bat_bwl_at_max = bat_bwl_sum >= 9
+                        wk_ar_at_max = wk_ar_sum >= 5
+                        bat_ar_wk_at_max = bat_ar_wk_sum >= 8
+                        bwl_ar_wk_at_max = bwl_ar_wk_sum >= 8
+                        bat_ar_bwl_at_max = bat_ar_bwl_sum >= 10
+                        wk_bat_bwl_at_max = wk_bat_bwl_sum >= 10
+                        
+                        is_disabled = (current_count >= rules.max_players and not is_selected) or (role_at_max and not is_selected) or (team_at_max and not is_selected) or (bat_bwl_at_max and player.role in ['BAT', 'BWL'] and not is_selected) or (wk_ar_at_max and player.role in ['WK', 'AR'] and not is_selected) or (bat_ar_wk_at_max and player.role in ['BAT', 'AR', 'WK'] and not is_selected) or (bwl_ar_wk_at_max and player.role in ['BWL', 'AR', 'WK'] and not is_selected) or (bat_ar_bwl_at_max and player.role in ['BAT', 'AR', 'BWL'] and not is_selected) or (wk_bat_bwl_at_max and player.role in ['WK', 'BAT', 'BWL'] and not is_selected)
                         
                         new_state = st.checkbox(label, value=is_selected, disabled=is_disabled, key=checkbox_key, help=tooltip)
                         
@@ -920,6 +906,26 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
                                 st.rerun(scope="fragment")
                             except Exception:
                                 st.rerun()
+            
+            current_role_count = role_counts.get(role, 0)
+            if role == "BAT" and current_role_count >= 6:
+                st.warning("⚠️ Minimum 3 and maximum 6 batsmen can be selected")
+            if role == "BWL" and current_role_count >= 6:
+                st.warning("⚠️ Minimum 3 and maximum 6 bowlers can be selected")
+            
+            if bat_bwl_sum >= 9 and role in ["BAT", "BWL"]:
+                st.warning("⚠️ At least 1 wicketkeeper and 1 all-rounder needs to be selected")
+            if wk_ar_sum >= 5 and role in ["WK", "AR"]:
+                st.warning("⚠️ At least 3 batsmen and 3 bowlers need to be selected")
+            
+            if bat_ar_wk_sum >= 8 and role in ["BAT", "AR", "WK"]:
+                st.warning("⚠️ Minimum 3 bowlers need to be selected")
+            if bwl_ar_wk_sum >= 8 and role in ["BWL", "AR", "WK"]:
+                st.warning("⚠️ At least 3 batsmen need to be selected")
+            if bat_ar_bwl_sum >= 10 and role in ["BAT", "AR", "BWL"]:
+                st.warning("⚠️ At least 1 wicketkeeper needs to be selected")
+            if wk_bat_bwl_sum >= 10 and role in ["WK", "BAT", "BWL"]:
+                st.warning("⚠️ At least 1 all-rounder needs to be selected")
             
             if num_teams < 3:
                 with team_cols[2]:
