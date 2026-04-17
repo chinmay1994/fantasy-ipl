@@ -36,22 +36,27 @@ SECRET_KEY = "fantasy_ipl_secret_key_2024"
 
 @st.fragment(run_every=1)
 def render_home_countdown():
+    live_matches = get_live_matches()
+    
     if "home_countdown" not in st.session_state:
         st.session_state.home_countdown = 60
     
-    remaining = st.session_state.home_countdown
-    remaining = max(0, remaining - 1)
-    st.session_state.home_countdown = remaining
-    
-    if remaining == 0:
-        st.session_state.home_countdown = 60
-        clear_all_caches()
-        try:
-            st.rerun(scope="fragment")
-        except:
-            st.rerun()
+    if live_matches:
+        remaining = st.session_state.home_countdown
+        remaining = max(0, remaining - 1)
+        st.session_state.home_countdown = remaining
+        
+        if remaining == 0:
+            st.session_state.home_countdown = 60
+            clear_all_caches()
+            try:
+                st.rerun(scope="fragment")
+            except:
+                st.rerun()
+        else:
+            st.caption(f"🔄 Auto-refresh in {remaining}s")
     else:
-        st.caption(f"🔄 Auto-refresh in {remaining}s")
+        st.session_state.home_countdown = 60
 
 def create_session_token(username: str) -> str:
     payload = f"{username}|{int(time.time())}"
@@ -81,6 +86,14 @@ st.set_page_config(
     page_icon="🏏",
     layout="wide",
 )
+
+st.markdown("""
+<style>
+    .block-container {padding-top: 0.5rem; padding-bottom: 0.5rem;}
+    header[data-testid="stHeader"] {height: 0px; min-height: 0px; display: none;}
+    div[data-testid="stToolbar"] {top: 0px;}
+</style>
+""", unsafe_allow_html=True)
 
 
 if "username" not in st.session_state:
