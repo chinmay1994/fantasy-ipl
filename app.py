@@ -172,15 +172,20 @@ def main():
     
     st.sidebar.success(f"Logged in as: **{st.session_state.username}**")
     
-    if st.sidebar.button("🔄 Refresh Data"):
-        clear_all_caches()
-        st.rerun()
+    action_cols = st.sidebar.columns(3)
+    with action_cols[0]:
+        if st.button("🔄", key="refresh_btn"):
+            clear_all_caches()
+            st.rerun()
+    with action_cols[2]:
+        if st.button("🚪", key="logout_btn"):
+            st.session_state.username = ""
+            cookies["fantasy_ipl_user"] = ""
+            cookies.save()
+            st.rerun()
     
-    if st.sidebar.button("🚪 Logout"):
-        st.session_state.username = ""
-        cookies["fantasy_ipl_user"] = ""
-        cookies.save()
-        st.rerun()
+    if "page" not in st.session_state:
+        st.session_state.page = "🏠 Home"
     
     if "page" not in st.session_state:
         st.session_state.page = "🏠 Home"
