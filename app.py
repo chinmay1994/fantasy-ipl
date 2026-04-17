@@ -31,7 +31,7 @@ from lib.validators import validate_team, get_team_stats
 from lib.scoring import calculate_team_total, calculate_team_with_player_scores
 
 
-SECRET_KEY = "fantasy_ipl_secret_key_2024"
+SECRET_KEY = st.secrets.get("SECRET_KEY", "fallback_secret_key")
 
 
 @st.fragment(run_every=1)
