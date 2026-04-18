@@ -594,11 +594,12 @@ def get_all_teams_for_match(match_id: str) -> list[FantasyTeam]:
 
 import bcrypt
 
+@st.cache_data(ttl=60, show_spinner=False)
 def get_users() -> pd.DataFrame:
     return get_all_records("Users")
 
 
-def add_user(username: str, password: str) -> bool:
+def add_user(username: str, password: str, is_admin: bool = False) -> bool:
     ws = get_spreadsheet().worksheet("Users")
     
     try:
@@ -609,7 +610,8 @@ def add_user(username: str, password: str) -> bool:
                 return False
         
         hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        ws.append_row([username, hashed], value_input_option="USER_ENTERED")
+        is_admin_val = "TRUE" if is_admin else "FALSE"
+        ws.append_row([username, hashed, is_admin_val], value_input_option="USER_ENTERED")
         clear_all_caches()
         return True
     except Exception as e:
@@ -621,13 +623,14 @@ def add_user(username: str, password: str) -> bool:
         raise e
 
 
-def verify_user(username: str, password: str) -> bool:
+def verify_user(username: str, password: str) -> tuple[bool, bool]:
     ws = get_spreadsheet().worksheet("Users")
     users = ws.get_all_values()
     
     for row in users[1:]:
         if row[0].lower() == username.lower():
             stored_hash = row[1]
-            return bcrypt.checkpw(password.encode(), stored_hash.encode())
+            is_admin = len(row) > 2 and row[2].strip().upper() == "TRUE"
+            return bcrypt.checkpw(password.encode(), stored_hash.encode()), is_admin
     
-    return False
+    return False, False

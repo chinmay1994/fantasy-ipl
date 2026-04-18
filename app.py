@@ -4,6 +4,7 @@ from datetime import datetime
 import hmac
 import base64
 import time
+import uuid
 from streamlit_cookies_manager import EncryptedCookieManager
 from lib.google_sheets import (
     get_matches,
@@ -26,6 +27,7 @@ from lib.google_sheets import (
     is_match_live,
     verify_user,
     add_user,
+    get_users,
 )
 from lib.validators import validate_team, get_team_stats
 from lib.scoring import calculate_team_total, calculate_team_with_player_scores
@@ -113,6 +115,12 @@ if "vice_captain" not in st.session_state:
 if "is_submitting" not in st.session_state:
     st.session_state.is_submitting = False
 
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
+
+if "pending_writes" not in st.session_state:
+    st.session_state.pending_writes = []
+
 COOKIE_PASSWORD = "fantasy_ipl_secret_2024"
 
 cookies = EncryptedCookieManager(prefix="ipl-di/", password=COOKIE_PASSWORD)
@@ -125,6 +133,12 @@ if not st.session_state.username:
         username = verify_session_token(stored_token)
         if username:
             st.session_state.username = username
+            from lib.google_sheets import get_users
+            users_df = get_users()
+            if not users_df.empty and "UserName" in users_df.columns:
+                user_row = users_df[users_df["UserName"].str.lower() == username.lower()]
+                if not user_row.empty and len(user_row.columns) > 2:
+                    st.session_state.is_admin = str(user_row.iloc[0]["isAdmin"]).strip().upper() == "TRUE"
 
 
 def main():
@@ -154,8 +168,10 @@ def main():
                         )
                         if st.form_submit_button("Login", use_container_width=True):
                             if username and password:
-                                if verify_user(username, password):
+                                is_valid, is_admin = verify_user(username, password)
+                                if is_valid:
                                     st.session_state.username = username
+                                    st.session_state.is_admin = is_admin
                                     token = create_session_token(username)
                                     cookies["fantasy_ipl_user"] = token
                                     cookies.save()
@@ -226,6 +242,8 @@ def main():
         st.session_state.page = "🏠 Home"
     
     pages = ["🏠 Home", "📝 Create Team", "📋 My Teams", "🏆 All Teams"]
+    if st.session_state.is_admin:
+        pages.append("🔧 Admin")
     current_index = pages.index(st.session_state.page) if st.session_state.page in pages else 0
     
     page = st.sidebar.radio(
@@ -244,6 +262,8 @@ def main():
         render_my_teams()
     elif page == "🏆 All Teams":
         render_all_teams()
+    elif page == "🔧 Admin":
+        render_admin()
 
 
 def get_leaderboard_position(match_id: str, username: str, scoring_rules) -> tuple[int, int]:
@@ -1024,7 +1044,157 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
                             st.rerun()
                         except Exception as e:
                             st.session_state.is_submitting = False
-                            st.error(f"Failed to submit team: {e}")
+                            entry_id = f"E{len(st.session_state.get('pending_writes', [])) + 1}"
+                            pending_entry = {
+                                "id": str(uuid.uuid4()),
+                                "type": "team_submission",
+                                "username": st.session_state.username,
+                                "match_id": selected_match.match_id,
+                                "entries_data": {
+                                    "entry_id": entry_id,
+                                    "username": st.session_state.username,
+                                    "match_id": selected_match.match_id,
+                                    "submitted_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                },
+                                "selections_data": players_data,
+                                "attempts": 0,
+                                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "last_attempt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "error": str(e)[:200]
+                            }
+                            if "pending_writes" not in st.session_state:
+                                st.session_state.pending_writes = []
+                            st.session_state.pending_writes.append(pending_entry)
+                            st.error(f"Failed to submit team: {e}. Added to retry queue.")
+
+
+def process_auto_retry():
+    pending = st.session_state.get("pending_writes", [])
+    if not pending:
+        return
+    
+    processed = False
+    for i in range(min(2, len(pending))):
+        if i >= len(pending):
+            break
+        if pending[i].get("attempts", 0) >= 5:
+            pending.pop(i)
+            processed = True
+    
+    if processed:
+        st.rerun()
+
+
+def render_admin():
+    process_auto_retry()
+    st.header("🔧 Admin Panel")
+    st.subheader("Failed Writes Queue")
+    
+    pending = st.session_state.get("pending_writes", [])
+    
+    if not pending:
+        st.success("No failed writes in queue!")
+    else:
+        st.info(f"Pending entries: {len(pending)}")
+        
+        for i, entry in enumerate(pending):
+            with st.expander(f"Entry {i+1}: {entry.get('username', 'N/A')} - {entry.get('match_id', 'N/A')} (Attempts: {entry.get('attempts', 0)})"):
+                st.write(f"**Type:** {entry.get('type', 'N/A')}")
+                st.write(f"**Created:** {entry.get('created_at', 'N/A')}")
+                st.write(f"**Last Attempt:** {entry.get('last_attempt', 'N/A')}")
+                st.write(f"**Error:** {entry.get('error', 'N/A')}")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Retry Now", key=f"retry_{i}"):
+                        retry_entry(i)
+                with col2:
+                    if st.button("Remove", key=f"remove_{i}"):
+                        st.session_state.pending_writes.pop(i)
+                        st.rerun()
+        
+        st.divider()
+        
+        if st.button("Retry All Pending", type="primary"):
+            for i in range(len(st.session_state.pending_writes) - 1, -1, -1):
+                retry_entry(i)
+            st.rerun()
+        
+        st.divider()
+        if st.button("Download Failed Writes (CSV)"):
+            download_failed_writes_csv()
+
+
+def retry_entry(index: int):
+    pending = st.session_state.get("pending_writes", [])
+    if index >= len(pending):
+        return
+    
+    entry = pending[index]
+    entry["attempts"] += 1
+    entry["last_attempt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    try:
+        if entry.get("type") == "team_submission":
+            from lib.google_sheets import save_entry
+            
+            entries_data = entry.get("entries_data", {})
+            selections_data = entry.get("selections_data", [])
+            
+            if not entry_exists(entries_data.get("username"), entries_data.get("match_id")):
+                entry_id = save_entry(
+                    entries_data.get("username"),
+                    entries_data.get("match_id"),
+                    selections_data
+                )
+                st.session_state.pending_writes.pop(index)
+                st.success(f"Retry successful! Entry ID: {entry_id}")
+            else:
+                entry["error"] = "Entry already exists in sheet"
+                entry["attempts"] = 5
+    except Exception as e:
+        entry["error"] = str(e)[:200]
+        if entry["attempts"] >= 5:
+            st.warning(f"Entry {index + 1} removed after 5 failed attempts")
+            st.session_state.pending_writes.pop(index)
+
+
+def download_failed_writes_csv():
+    import io
+    
+    pending = st.session_state.get("pending_writes", [])
+    if not pending:
+        st.warning("No failed writes to download")
+        return
+    
+    lines = []
+    lines.append("=== Entries ===")
+    lines.append("EntryID,UserName,MatchID,SubmittedAt")
+    
+    for entry in pending:
+        if entry.get("type") == "team_submission":
+            entries_data = entry.get("entries_data", {})
+            lines.append(f"{entries_data.get('entry_id', '')},{entries_data.get('username', '')},{entries_data.get('match_id', '')},{entries_data.get('submitted_at', '')}")
+    
+    lines.append("")
+    lines.append("=== FantasySelections ===")
+    lines.append("EntryID,PlayerID,PlayerName,Role,RealTeam,Credits,IsCaptain,IsViceCaptain")
+    
+    for entry in pending:
+        if entry.get("type") == "team_submission":
+            entries_data = entry.get("entries_data", {})
+            entry_id = entries_data.get("entry_id", "")
+            selections_data = entry.get("selections_data", [])
+            for sel in selections_data:
+                lines.append(f"{entry_id},{sel.get('player_id', '')},{sel.get('player_name', '')},{sel.get('role', '')},{sel.get('real_team', '')},{sel.get('credits', '')},{sel.get('is_captain', '')},{sel.get('is_vice_captain', '')}")
+    
+    csv_content = "\n".join(lines)
+    st.download_button(
+        label="Download CSV",
+        data=csv_content,
+        file_name="failed_writes.csv",
+        mime="text/csv"
+    )
 
 
 if __name__ == "__main__":
