@@ -6,7 +6,10 @@ import base64
 import time
 import uuid
 from streamlit_cookies_manager import EncryptedCookieManager
-from lib.google_sheets import (
+from lib.supabase_client import (
+    verify_user,
+    add_user,
+    get_users,
     get_matches,
     get_upcoming_matches,
     get_live_matches,
@@ -25,9 +28,6 @@ from lib.google_sheets import (
     clear_all_caches,
     now_ist,
     is_match_live,
-    verify_user,
-    add_user,
-    get_users,
 )
 from lib.validators import validate_team, get_team_stats
 from lib.scoring import calculate_team_total, calculate_team_with_player_scores
@@ -133,12 +133,12 @@ if not st.session_state.username:
         username = verify_session_token(stored_token)
         if username:
             st.session_state.username = username
-            from lib.google_sheets import get_users
+            from lib.supabase_client import get_users
             users_df = get_users()
-            if not users_df.empty and "UserName" in users_df.columns:
-                user_row = users_df[users_df["UserName"].str.lower() == username.lower()]
-                if not user_row.empty and len(user_row.columns) > 2:
-                    st.session_state.is_admin = str(user_row.iloc[0]["isAdmin"]).strip().upper() == "TRUE"
+            if not users_df.empty and "username" in users_df.columns:
+                user_row = users_df[users_df["username"].str.lower() == username.lower()]
+                if not user_row.empty:
+                    st.session_state.is_admin = bool(user_row.iloc[0].get("is_admin", False))
 
 
 def main():
@@ -294,10 +294,10 @@ def render_home():
     completed_matches = get_completed_matches()
     
     entries = get_entries()
-    if entries.empty or "UserName" not in entries.columns:
+    if entries.empty or "username" not in entries.columns:
         user_entries = pd.DataFrame()
     else:
-        user_entries = entries[entries["UserName"] == st.session_state.username]
+        user_entries = entries[entries["username"] == st.session_state.username]
     
     scoring_rules = get_scoring_rules()
     
@@ -305,11 +305,11 @@ def render_home():
         st.header("🔴 Live Matches")
         
         for match in live_matches:
-            st.subheader(f"📺 {match.match_name}")
-            st.caption(f"Status: {match.status}")
+            st.subheader(f"📺 {match['match_name']}")
+            st.caption(f"Status: {match['status']}")
             
-            teams = get_all_teams_for_match(match.match_id)
-            player_points = get_player_points(match.match_id)
+            teams = get_all_teams_for_match(match['match_id'])
+            player_points = get_player_points(match['match_id'])
             
             teams_with_scores = []
             for team in teams:
@@ -390,30 +390,23 @@ def render_home():
         st.divider()
         st.header("📊 Your Recent Match Scores")
         
-        user_match_ids = set(str(m) for m in user_entries["MatchID"])
-        recent_completed = [m for m in completed_matches if m.match_id in user_match_ids]
-        
-        if not recent_completed:
-            st.info("No completed matches with your entries yet.")
-        else:
-            recent_completed = sorted(recent_completed, key=lambda x: x.start_time, reverse=True)[:5]
+        user_match_ids = set(str(m) for m in user_entries["match_id"])
+    recent_completed = [m for m in completed_matches if m['match_id'] in user_match_ids]
+
+    if recent_completed:
+        recent_completed = sorted(recent_completed, key=lambda x: x.get('start_time', pd.Timestamp.max), reverse=True)[:5]
+
+        for match in recent_completed:
+            entry = user_entries[user_entries["match_id"].astype(str) == match['match_id']].iloc[0]
+
+            player_points = get_player_points(match['match_id'])
+
+            position, total_players = get_leaderboard_position(match['match_id'], st.session_state.username, scoring_rules)
             
-            for match in recent_completed:
-                entry = user_entries[user_entries["MatchID"].astype(str) == match.match_id].iloc[0]
-                entry_id = str(entry["EntryID"])
-                
-                selections = get_team_selections(entry_id)
-                player_points = get_player_points(match.match_id)
-                
-                position, total_players = get_leaderboard_position(match.match_id, st.session_state.username, scoring_rules)
-                
-                if player_points.empty:
-                    st.warning(f"No points data available for {match.match_name} yet.")
-                    continue
-                
-                total_score, player_scores = calculate_team_with_player_scores(selections, player_points, scoring_rules)
-                
-                with st.expander(f"📌 {match.match_name} - {total_score:.2f} pts (Rank: #{position}/{total_players})"):
+            if player_points.empty:
+                st.warning(f"No points data available for {match['match_name']} yet.")
+
+            with st.expander(f"📌 {match['match_name']} - {total_score:.2f} pts (Rank: #{position}/{total_players})"):
                     role_emoji = {"WK": "🧤", "BAT": "🏏", "AR": "🔄", "BWL": "🎳"}
                     
                     player_data = []
@@ -449,9 +442,17 @@ def render_home():
         st.divider()
         st.header("📅 Upcoming Matches")
         for match in upcoming[:3]:
-            st.markdown(f"**{match.match_name}**")
-            st.caption(f"Starts: {match.start_time.strftime('%Y-%m-%d %H:%M')}")
+            st.markdown(f"**{match['match_name']}**")
 
+            match_start = match.get('start_time')
+            if match_start:
+                try:
+                    match_start = pd.to_datetime(match_start)
+                    st.caption(f"Starts: {match_start.strftime('%Y-%m-%d %H:%M')}")
+                except:
+                    st.caption(f"Starts: {match_start}")
+            else:
+                st.caption("Starts: TBD")
 
 def render_create_team():
     st.header("📝 Create Team")
@@ -462,9 +463,7 @@ def render_create_team():
         st.warning("No upcoming matches found.")
         return
     
-    upcoming_matches_sorted = sorted(upcoming_matches, key=lambda x: (
-        x.start_time.timestamp() if x.start_time else float('inf')
-    ))
+    upcoming_matches_sorted = sorted(upcoming_matches, key=lambda x: pd.to_datetime(x.get('start_time')).timestamp() if x.get('start_time') else float('inf'))
     
     if "create_team_index" not in st.session_state:
         st.session_state.create_team_index = 0
@@ -487,8 +486,13 @@ def render_create_team():
     
     with col_title:
         status_emoji = "🔴" if is_match_live(selected_match) else "📌"
-        match_time = selected_match.start_time.strftime('%Y-%m-%d %H:%M') if selected_match.start_time else "TBD"
-        st.markdown(f"### {status_emoji} {selected_match.match_name}")
+        match_time = selected_match.get('start_time', 'TBD')
+        if match_time != 'TBD':
+            try:
+                match_time = pd.to_datetime(match_time).strftime('%Y-%m-%d %H:%M')
+            except:
+                pass
+        st.markdown(f"### {status_emoji} {selected_match.get('match_name', 'Unknown')}")
         st.caption(f"{match_time} ({current_idx + 1}/{len(upcoming_matches_sorted)})")
     
     with col_next:
@@ -499,17 +503,17 @@ def render_create_team():
             st.session_state.vice_captain = None
             st.rerun()
     
-    existing_entry = entry_exists(st.session_state.username, selected_match.match_id)
+    existing_entry = entry_exists(st.session_state.username, selected_match['match_id'])
     
     rules = get_rules()
-    squad_players = get_match_squad(selected_match.match_id)
+    squad_players = get_match_squad(selected_match['match_id'])
     
     if not squad_players:
         st.warning("No players available for this match.")
         return
     
-    if st.session_state.selected_match_id != selected_match.match_id:
-        st.session_state.selected_match_id = selected_match.match_id
+    if st.session_state.selected_match_id != selected_match['match_id']:
+        st.session_state.selected_match_id = selected_match['match_id']
         st.session_state.selected_players = {}
         st.session_state.captain = None
         st.session_state.vice_captain = None
@@ -536,7 +540,7 @@ def render_create_team():
                 st.session_state.vice_captain = sel.player_id
     
     if "selected_match_id" not in st.session_state:
-        st.session_state.selected_match_id = selected_match.match_id
+        st.session_state.selected_match_id = selected_match['match_id']
     
     render_player_selection_fragment(squad_players, rules, selected_match)
 
@@ -545,19 +549,12 @@ def render_my_teams():
     st.header("📋 My Teams")
     
     entries = get_entries()
-    if entries.empty or "UserName" not in entries.columns:
+    if entries.empty or "username" not in entries.columns:
         user_entries = pd.DataFrame()
     else:
-        user_entries = entries[entries["UserName"] == st.session_state.username]
+        user_entries = entries[entries["username"] == st.session_state.username]
     
-    if user_entries.empty:
-        st.info("You haven't submitted any teams yet.")
-        return
-    
-    all_matches = get_matches()
-    match_dict = {m.match_id: m for m in all_matches}
-    
-    user_entries["match_start_time"] = user_entries["MatchID"].apply(
+    user_entries["match_start_time"] = user_entries["match_id"].apply(
         lambda x: match_dict.get(str(x)).start_time if match_dict.get(str(x)) and match_dict.get(str(x)).start_time else None
     )
     user_entries = user_entries.sort_values("match_start_time", ascending=False, na_position="last")
@@ -565,15 +562,15 @@ def render_my_teams():
     rules = get_rules()
     
     for _, entry in user_entries.iterrows():
-        entry_id = str(entry["EntryID"])
-        match_id = str(entry["MatchID"])
+        entry_id = str(entry["entry_id"])
+        match_id = str(entry["match_id"])
         
         all_matches = get_matches()
-        match = next((m for m in all_matches if m.match_id == match_id), None)
-        match_name = match.match_name if match else match_id
+        match = next((m for m in all_matches if m.get("match_id") == match_id), None)
+        match_name = match.get("match_name", match_id) if match else match_id
         
-        lock_time = match.lock_time if match else None
-        is_locked = lock_time and now_ist() > lock_time
+        lock_time = match.get("lock_time") if match else None
+        is_locked = lock_time and now_ist() > pd.to_datetime(lock_time)
         
         with st.expander(f"📌 {match_name}"):
             selections = get_team_selections(entry_id)
@@ -633,9 +630,7 @@ def render_all_teams():
         st.info("No matches found.")
         return
     
-    all_matches_sorted = sorted(all_matches, key=lambda x: (
-        x.start_time.timestamp() if x.start_time else float('inf')
-    ))
+    all_matches_sorted = sorted(all_matches, key=lambda x: pd.to_datetime(x.get('start_time')).timestamp() if x.get('start_time') else float('inf'))
     
     if "all_teams_index" not in st.session_state:
         now = now_ist()
@@ -653,7 +648,7 @@ def render_all_teams():
     st.session_state.all_teams_index = current_idx
     
     match = all_matches_sorted[current_idx]
-    teams = get_all_teams_for_match(match.match_id)
+    teams = get_all_teams_for_match(match['match_id'])
     
     col_prev, col_title, col_next = st.columns([1, 2, 1])
     
@@ -664,8 +659,13 @@ def render_all_teams():
     
     with col_title:
         status_emoji = "🔴" if is_match_live(match) else "📌"
-        match_time = match.start_time.strftime('%Y-%m-%d %H:%M') if match.start_time else "TBD"
-        st.markdown(f"### {status_emoji} {match.match_name}")
+        match_time = match.get('start_time', 'TBD')
+        if match_time != 'TBD':
+            try:
+                match_time = pd.to_datetime(match_time).strftime('%Y-%m-%d %H:%M')
+            except:
+                pass
+        st.markdown(f"### {status_emoji} {match.get('match_name', 'Unknown')}")
         st.caption(f"{match_time} ({current_idx + 1}/{len(all_matches_sorted)})")
     
     with col_next:
@@ -676,10 +676,16 @@ def render_all_teams():
     st.divider()
     
     now = now_ist()
-    match_started = match.start_time and match.start_time <= now
+    match_start = match.get('start_time')
+    if match_start:
+        try:
+            match_start = pd.to_datetime(match_start)
+        except:
+            match_start = None
+    match_started = match_start and match_start <= now
     
     if not match_started:
-        st.info(f"Teams will be visible after match starts ({match.start_time.strftime('%Y-%m-%d %H:%M')})")
+        st.info(f"Teams will be visible after match starts ({match.get('start_time', 'TBD')})")
         return
     
     if not teams:
@@ -687,7 +693,7 @@ def render_all_teams():
         return
     
     scoring_rules = get_scoring_rules()
-    player_points = get_player_points(match.match_id)
+    player_points = get_player_points(match['match_id'])
     
     teams_with_scores = []
     for team in teams:
@@ -774,35 +780,34 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
     player_tournament_points = {}
     player_last_5_matches = {}
 
-    if not all_player_points.empty and "PlayerID" in all_player_points.columns and "TotalPts" in all_player_points.columns:
-        all_player_points["TotalPts"] = pd.to_numeric(all_player_points["TotalPts"], errors="coerce").fillna(0)
-        match_times = {m.match_id: m.start_time for m in all_matches}
+    if not all_player_points.empty and "player_id" in all_player_points.columns and "total_pts" in all_player_points.columns:
+        all_player_points["total_pts"] = pd.to_numeric(all_player_points["total_pts"], errors="coerce").fillna(0)
 
-        for player in squad_players:
-            player_data = all_player_points[all_player_points["PlayerID"] == player.player_id].copy()
-            if not player_data.empty:
-                player_data["match_time"] = player_data["MatchID"].apply(
-                    lambda x: match_times.get(str(x)) if match_times.get(str(x)) else None
-                )
-                player_data = player_data.sort_values("match_time", na_position="last")
-                total_pts = player_data["TotalPts"].sum()
-                player_tournament_points[player.player_id] = total_pts
+        player_data = all_player_points[all_player_points["player_id"] == player.player_id].copy()
 
-                past_matches = player_data[player_data["match_time"].notna() & (player_data["match_time"] < now_ist())]
-                last_5 = past_matches.tail(5)
-                match_details = []
-                for _, row in last_5.iterrows():
-                    match_id = str(row.get("MatchID", ""))
-                    pts = float(row.get("TotalPts", 0))
-                    runs = int(row.get("Runs", 0) or 0)
-                    wkts = int(row.get("Wickets", 0) or 0)
-                    catches = int(row.get("Catches", 0) or 0)
-                    stats = []
-                    if runs > 0: stats.append(f"{runs}r")
-                    if wkts > 0: stats.append(f"{wkts}w")
-                    if catches > 0: stats.append(f"{catches}c")
-                    match_details.append(f"{match_id}: {pts:.1f}pts ({', '.join(stats)})" if stats else f"{match_id}: {pts:.1f}pts")
-                player_last_5_matches[player.player_id] = match_details
+        if not player_data.empty:
+            player_data["match_time"] = player_data["match_id"].apply(
+                lambda x: match_times.get(str(x)) if match_times.get(str(x)) else None
+            )
+            player_data = player_data.sort_values("match_time", na_position="last")
+            total_pts = player_data["total_pts"].sum()
+            player_tournament_points[player.player_id] = total_pts
+
+            past_matches = player_data[player_data["match_time"].notna() & (player_data["match_time"] < now_ist())]
+            last_5 = past_matches.tail(5)
+            match_details = []
+            for _, row in last_5.iterrows():
+                match_id = str(row.get("match_id", ""))
+                pts = float(row.get("total_pts", 0))
+                runs = int(row.get("runs", 0) or 0)
+                wkts = int(row.get("wickets", 0) or 0)
+                catches = int(row.get("catches", 0) or 0)
+                stats = []
+                if runs > 0: stats.append(f"{runs}r")
+                if wkts > 0: stats.append(f"{wkts}w")
+                if catches > 0: stats.append(f"{catches}c")
+                match_details.append(f"{match_id}: {pts:.1f}pts ({', '.join(stats)})" if stats else f"{match_id}: {pts:.1f}pts")
+            player_last_5_matches[player.player_id] = match_details
 
     selected_list = []
     for pid, player in st.session_state.selected_players.items():
@@ -1037,7 +1042,7 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
                                 "is_vice_captain": pid == st.session_state.vice_captain,
                             })
                         try:
-                            entry_id = save_entry(st.session_state.username, selected_match.match_id, players_data)
+                            entry_id = save_entry(st.session_state.username, selected_match['match_id'], players_data)
                             st.session_state.is_submitting = False
                             st.session_state.page = "📋 My Teams"
                             st.success(f"Team submitted! Entry ID: {entry_id}")
@@ -1049,11 +1054,11 @@ def render_player_selection_fragment(squad_players, rules, selected_match):
                                 "id": str(uuid.uuid4()),
                                 "type": "team_submission",
                                 "username": st.session_state.username,
-                                "match_id": selected_match.match_id,
+                                "match_id": selected_match['match_id'],
                                 "entries_data": {
                                     "entry_id": entry_id,
                                     "username": st.session_state.username,
-                                    "match_id": selected_match.match_id,
+                                    "match_id": selected_match['match_id'],
                                     "submitted_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                 },
                                 "selections_data": players_data,
@@ -1136,8 +1141,6 @@ def retry_entry(index: int):
     
     try:
         if entry.get("type") == "team_submission":
-            from lib.google_sheets import save_entry
-            
             entries_data = entry.get("entries_data", {})
             selections_data = entry.get("selections_data", [])
             
