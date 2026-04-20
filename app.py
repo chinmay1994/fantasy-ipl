@@ -11,6 +11,7 @@ from lib.google_sheets import (
     get_upcoming_matches,
     get_live_matches,
     get_completed_matches,
+    get_match_score,
     get_rules,
     get_scoring_rules,
     get_entries,
@@ -305,7 +306,8 @@ def render_home():
         st.header("🔴 Live Matches")
         
         for match in live_matches:
-            st.subheader(f"📺 {match.match_name}")
+            score = get_match_score(match.match_id)
+            st.subheader(f"📺 {score}")
             st.caption(f"Status: {match.status}")
             
             teams = get_all_teams_for_match(match.match_id)

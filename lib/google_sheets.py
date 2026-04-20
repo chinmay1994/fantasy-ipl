@@ -302,6 +302,96 @@ def get_completed_matches() -> list[Match]:
     return completed
 
 
+TEAM_NAMES = {
+    "GT": "Gujarat Titans",
+    "MI": "Mumbai Indians",
+    "CSK": "Chennai Super Kings",
+    "RCB": "Royal Challengers Bengaluru",
+    "PBKS": "Punjab Kings",
+    "KKR": "Kolkata Knight Riders",
+    "RR": "Rajasthan Royals",
+    "LSG": "Lucknow Super Giants",
+    "DC": "Delhi Capitals",
+    "SRH": "Sunrisers Hyderabad",
+}
+
+@st.cache_data(ttl=60)
+def get_match_score(match_id: str) -> str:
+    matches_df = get_all_records("Matches")
+    match_row = matches_df[matches_df.get("MatchID", "") == match_id]
+    if match_row.empty:
+        return ""
+    
+    team_a = str(match_row.iloc[0].get("TeamA", "")).strip()
+    team_b = str(match_row.iloc[0].get("TeamB", "")).strip()
+    team_a_full = TEAM_NAMES.get(team_a, team_a)
+    team_b_full = TEAM_NAMES.get(team_b, team_b)
+    
+    bbb_df = get_all_records("BallByBall")
+    innings_df = bbb_df[bbb_df.get("MatchID", "") == match_id]
+    if innings_df.empty:
+        return ""
+    
+    current_innings = int(innings_df["Innings"].max())
+    
+    # Determine batting team from latest ball
+    squad_df = get_all_records("MatchSquad")
+    squad_match = squad_df[squad_df.get("MatchID", "") == match_id]
+    
+    latest_ball = innings_df.iloc[-1]
+    latest_batter = str(latest_ball.get("BatterID", "")).strip()
+    
+    batter_row = squad_match[squad_match.get("PlayerID", "") == latest_batter]
+    batting_team = str(batter_row.iloc[0].get("RealTeam", "")).strip() if not batter_row.empty else team_a
+    
+    def calc_innings_score(innings_num):
+        inn_df = innings_df[innings_df["Innings"] == str(innings_num)]
+        if inn_df.empty:
+            return None
+        try:
+            runs = int(inn_df["TotalRuns"].astype(float).sum())
+        except:
+            runs = 0
+        try:
+            runs_bat = int(inn_df["RunsBat"].astype(float).sum())
+        except:
+            runs_bat = 0
+        try:
+            extras = int(inn_df["Extras"].astype(float).sum())
+        except:
+            extras = 0
+        total = runs_bat + extras
+        try:
+            wickets = len(inn_df[inn_df["WicketFlag (1/0)"].astype(str) == '1'])
+        except:
+            wickets = 0
+        try:
+            max_over = inn_df["Over"].astype(float).max()
+            overs = int(max_over)
+            balls = int((max_over - overs) * 10)
+        except:
+            overs, balls = 0, 0
+        return f"({total}/{wickets}, {overs}.{balls} overs)"
+    
+    score_inn1 = calc_innings_score(1)
+    score_inn2 = calc_innings_score(2)
+    
+    if current_innings == 1:
+        # During 1st innings, show batting team with score vs other team
+        if batting_team == team_a:
+            return f"{team_a_full} {score_inn1} vs {team_b_full}"
+        else:
+            return f"{team_b_full} {score_inn1} vs {team_a_full}"
+    else:
+        # 2nd innings: batting team first, then vs, then first innings team
+        if batting_team == team_a:
+            # Team A batting 2nd
+            return f"{team_a_full} {score_inn2} vs {team_b_full} {score_inn1}"
+        else:
+            # Team B batting 2nd
+            return f"{team_b_full} {score_inn2} vs {team_a_full} {score_inn1}"
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def get_match_squad(match_id: str) -> list[MatchSquadPlayer]:
     df = get_all_records("MatchSquad")
