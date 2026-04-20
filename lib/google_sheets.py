@@ -576,6 +576,68 @@ def save_entry(username: str, match_id: str, players: list[dict]) -> str:
         
         selections_worksheet.update(f'L{start_row}:P{end_row}', formulas, value_input_option='USER_ENTERED')
     
+    # Update Validation and Leaderboard formulas
+    try:
+        validation_ws = get_worksheet("Validation")
+        leaderboard_ws = get_worksheet("Leaderboard")
+        
+        if validation_ws and leaderboard_ws:
+            all_entries = get_entries()
+            entry_row = len(all_entries) + 1 # +1 because all_entries includes headers but len is count
+            # Actually if we just appended to Entries, the new row is len(all_entries)+1
+            # Wait, get_entries() fetches the current state. 
+            # If we just added one, entry_row = len(all_entries) + 1
+            r = entry_row
+            
+            v_formulas = [[
+                f'=Entries!A{r}',
+                f'=Entries!B{r}',
+                f'=Entries!C{r}',
+                f'=IF(A{r}="","","")',
+                f'=IF(A{r}="","",COUNTIFS(FantasySelections!$A:$A,A{r}))',
+                f'=IF(A{r}="","",SUMIFS(FantasySelections!$P:$P,FantasySelections!$A:$A,A{r}))',
+                f'=IF(A{r}="","",COUNTIFS(FantasySelections!$A:$A,A{r},FantasySelections!$G:$G,"WK"))',
+                f'=IF(A{r}="","",COUNTIFS(FantasySelections!$A:$A,A{r},FantasySelections!$G:$G,"BAT"))',
+                f'=IF(A{r}="","",COUNTIFS(FantasySelections!$A:$A,A{r},FantasySelections!$G:$G,"AR"))',
+                f'=IF(A{r}="","",COUNTIFS(FantasySelections!$A:$A,A{r},FantasySelections!$G:$G,"BWL"))',
+                f'=IF(A{r}="","",SUMIFS(FantasySelections!$I:$I,FantasySelections!$A:$A,A{r}))',
+                f'=IF(A{r}="","",COUNTIFS(FantasySelections!$A:$A,A{r},FantasySelections!$J:$J,1))',
+                f'=IF(A{r}="","",COUNTIFS(FantasySelections!$A:$A,A{r},FantasySelections!$K:$K,1))',
+                f'=IFERROR(VLOOKUP(B{r},Matches!$A:$E,4,FALSE()),"")',
+                f'=IFERROR(VLOOKUP(B{r},Matches!$A:$E,5,FALSE()),"")',
+                f'=IF(A{r}="","",COUNTIFS(FantasySelections!$A:$A,A{r},FantasySelections!$H:$H,N{r}))',
+                f'=IF(A{r}="","",COUNTIFS(FantasySelections!$A:$A,A{r},FantasySelections!$H:$H,O{r}))',
+                f'=IF(A{r}="","",MAX(P{r},Q{r}))',
+                f'=IF(A{r}="","",SUMIFS(FantasySelections!$L:$L,FantasySelections!$A:$A,A{r}))',
+                f'=IF(A{r}="","",IF(AND(E{r}=Rules!$B$2,F{r}=Rules!$B$2,G{r}>=Rules!$B$3,H{r}>=Rules!$B$4,I{r}>=Rules!$B$5,J{r}>=Rules!$B$6,K{r}<=Rules!$B$8,L{r}=1,M{r}=1,R{r}<=Rules!$B$7,S{r}=Rules!$B$2),"VALID","INVALID"))'
+            ]]
+            
+            l_formulas = [[
+                f'=Validation!A{r}',
+                f'=Validation!B{r}',
+                f'=Validation!C{r}',
+                f'=Validation!T{r}',
+                f'=IF(A{r}="","",SUMIFS(FantasySelections!$O:$O,FantasySelections!$A:$A,A{r}))',
+                f'=IF(D{r}<>"VALID","",COUNTIFS($B:$B,B{r},$E:$E,">"&E{r})+1)'
+            ]]
+            
+            # Check if we need to append or update
+            # For simplicity, we'll append if the row is new
+            v_data = validation_ws.get_all_values()
+            if len(v_data) < r:
+                validation_ws.append_row(v_formulas[0], value_input_option='USER_ENTERED')
+            else:
+                validation_ws.update(f'A{r}:T{r}', v_formulas, value_input_option='USER_ENTERED')
+                
+            l_data = leaderboard_ws.get_all_values()
+            if len(l_data) < r:
+                leaderboard_ws.append_row(l_formulas[0], value_input_option='USER_ENTERED')
+            else:
+                leaderboard_ws.update(f'A{r}:F{r}', l_formulas, value_input_option='USER_ENTERED')
+                
+    except Exception as e:
+        print(f"Warning: Failed to update Validation/Leaderboard formulas: {e}")
+        
     clear_all_caches()
     return entry_id
 
