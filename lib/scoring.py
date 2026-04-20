@@ -107,8 +107,8 @@ def calculate_team_total(
         match_id = selection.match_id
         
         player_stats = player_points_df[
-            (player_points_df["PlayerID"] == player_id) &
-            (player_points_df["MatchID"] == match_id)
+            (player_points_df["player_id"] == player_id) &
+            (player_points_df["match_id"] == match_id)
         ]
         
         if player_stats.empty:
@@ -116,27 +116,27 @@ def calculate_team_total(
         
         row = player_stats.iloc[0]
         stats = PlayerPoints(
-            match_id=str(row.get("MatchID", "")),
-            player_id=str(row.get("PlayerID", "")),
-            player_name=str(row.get("PlayerName", "")),
-            role=str(row.get("Role", "")),
-            real_team=str(row.get("RealTeam", "")),
-            in_starting_xi=bool(row.get("InStartingXI", 0)),
-            runs=int(row.get("Runs", 0)),
-            fours=int(row.get("Fours", 0)),
-            sixes=int(row.get("Sixes", 0)),
-            wickets=int(row.get("Wickets", 0)),
-            catches=int(row.get("Catches", 0)),
-            stumpings=int(row.get("Stumpings", 0)),
-            run_out_direct=int(row.get("RunOutDirect", 0)),
-            run_out_assist=int(row.get("RunOutAssist", 0)),
-            maidens=int(row.get("Maidens", 0)),
-            batting_pts=float(row.get("BattingPts", 0)),
-            bat_bonus_pts=float(row.get("BatBonusPts", 0)),
-            bowling_pts=float(row.get("BowlingPts", 0)),
-            bowling_bonus_pts=float(row.get("BowlingBonusPts", 0)),
-            fielding_pts=float(row.get("FieldingPts", 0)),
-            total_pts=float(row.get("TotalPts", 0)),
+            match_id=str(row.get("match_id", "")),
+            player_id=str(row.get("player_id", "")),
+            player_name=str(row.get("player_name", "")),
+            role=str(row.get("role", "")),
+            real_team=str(row.get("team", "")),
+            in_starting_xi=bool(row.get("in_starting_xi", 0)),
+            runs=int(row.get("runs", 0)),
+            fours=int(row.get("fours", 0)),
+            sixes=int(row.get("sixes", 0)),
+            wickets=int(row.get("wickets", 0)),
+            catches=int(row.get("catches", 0)),
+            stumpings=int(row.get("stumpings", 0)),
+            run_out_direct=int(row.get("run_out_direct", 0)),
+            run_out_assist=int(row.get("run_out_assist", 0)),
+            maidens=int(row.get("maidens", 0)),
+            batting_pts=float(row.get("batting_pts", 0)),
+            bat_bonus_pts=float(row.get("bat_bonus_pts", 0)),
+            bowling_pts=float(row.get("bowling_pts", 0)),
+            bowling_bonus_pts=float(row.get("bowling_bonus_pts", 0)),
+            fielding_pts=float(row.get("fielding_pts", 0)),
+            total_pts=float(row.get("total_pts", 0)),
         )
         
         multiplier = 1.0
@@ -145,7 +145,7 @@ def calculate_team_total(
         elif selection.is_vice_captain:
             multiplier = 1.5
         
-        is_dismissed = row.get("Runs", 0) == 0 and row.get("InStartingXI", 0) == 1
+        is_dismissed = row.get("runs", 0) == 0 and row.get("in_starting_xi", 0) == 1
         
         player_total = calculate_player_points(
             stats,
@@ -186,8 +186,8 @@ def calculate_team_with_player_scores(
         match_id = selection.match_id
         
         player_stats = player_points_df[
-            (player_points_df["PlayerID"] == player_id) &
-            (player_points_df["MatchID"] == match_id)
+            (player_points_df["player_id"] == player_id) &
+            (player_points_df["match_id"] == match_id)
         ]
         
         multiplier = 1.0
@@ -202,26 +202,26 @@ def calculate_team_with_player_scores(
         
         if not player_stats.empty:
             row = player_stats.iloc[0]
-            runs = int(row.get("Runs", 0))
-            wickets = int(row.get("Wickets", 0))
-            catches = int(row.get("Catches", 0))
+            runs = int(row.get("runs", 0))
+            wickets = int(row.get("wickets", 0))
+            catches = int(row.get("catches", 0))
             
             stats = PlayerPoints(
-                match_id=str(row.get("MatchID", "")),
-                player_id=str(row.get("PlayerID", "")),
-                player_name=str(row.get("PlayerName", "")),
-                role=str(row.get("Role", "")),
-                real_team=str(row.get("RealTeam", "")),
-                in_starting_xi=bool(row.get("InStartingXI", 0)),
+                match_id=str(row.get("match_id", "")),
+                player_id=str(row.get("player_id", "")),
+                player_name=str(row.get("player_name", "")),
+                role=str(row.get("role", "")),
+                real_team=str(row.get("team", "")),
+                in_starting_xi=bool(row.get("in_starting_xi", 0)),
                 runs=runs,
-                fours=int(row.get("Fours", 0)),
-                sixes=int(row.get("Sixes", 0)),
+                fours=int(row.get("fours", 0)),
+                sixes=int(row.get("sixes", 0)),
                 wickets=wickets,
                 catches=catches,
-                stumpings=int(row.get("Stumpings", 0)),
-                run_out_direct=int(row.get("RunOutDirect", 0)),
-                run_out_assist=int(row.get("RunOutAssist", 0)),
-                maidens=int(row.get("Maidens", 0)),
+                stumpings=int(row.get("stumpings", 0)),
+                run_out_direct=int(row.get("run_out_direct", 0)),
+                run_out_assist=int(row.get("run_out_assist", 0)),
+                maidens=int(row.get("maidens", 0)),
                 batting_pts=0, bat_bonus_pts=0, bowling_pts=0,
                 bowling_bonus_pts=0, fielding_pts=0, total_pts=0,
             )
