@@ -53,7 +53,6 @@ def render_home_countdown():
         
         if remaining == 0:
             st.session_state.home_countdown = 60
-            clear_all_caches()
             try:
                 st.rerun(scope="fragment")
             except:

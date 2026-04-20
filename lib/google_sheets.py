@@ -126,8 +126,24 @@ def get_worksheet(sheet_name: str):
         return None
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def get_all_records(sheet_name: str) -> pd.DataFrame:
+# TTL Constants (in seconds)
+TTL_LIVE = 60      # Matches, PlayerPoints, Leaderboard
+TTL_DATA = 300     # Entries, Selections, Users
+TTL_STATIC = 3600  # Rules, Squads, Players
+
+@st.cache_data(ttl=TTL_LIVE, show_spinner=False)
+def get_all_records_live(sheet_name: str) -> pd.DataFrame:
+    return _fetch_all_records(sheet_name)
+
+@st.cache_data(ttl=TTL_DATA, show_spinner=False)
+def get_all_records_data(sheet_name: str) -> pd.DataFrame:
+    return _fetch_all_records(sheet_name)
+
+@st.cache_data(ttl=TTL_STATIC, show_spinner=False)
+def get_all_records_static(sheet_name: str) -> pd.DataFrame:
+    return _fetch_all_records(sheet_name)
+
+def _fetch_all_records(sheet_name: str) -> pd.DataFrame:
     worksheet = get_worksheet(sheet_name)
     if worksheet is None:
         return pd.DataFrame()
@@ -141,8 +157,20 @@ def get_all_records(sheet_name: str) -> pd.DataFrame:
     except Exception:
         return pd.DataFrame()
 
+def get_all_records(sheet_name: str) -> pd.DataFrame:
+    """Central dispatcher for tiered caching"""
+    live_sheets = ["Matches", "PlayerPoints", "Leaderboard"]
+    static_sheets = ["Rules", "MatchSquad", "Players", "Matches_Archive"]
+    
+    if sheet_name in live_sheets:
+        return get_all_records_live(sheet_name)
+    elif sheet_name in static_sheets:
+        return get_all_records_static(sheet_name)
+    else:
+        return get_all_records_data(sheet_name)
 
-@st.cache_data(ttl=300, show_spinner=False)
+
+@st.cache_data(ttl=TTL_STATIC, show_spinner=False)
 def get_rules() -> Rules:
     df = get_all_records("Rules")
     rules = Rules()
@@ -179,8 +207,8 @@ def get_rules() -> Rules:
     return rules
 
 
-@st.cache_data(ttl=300)
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=TTL_STATIC)
+@st.cache_data(ttl=TTL_STATIC)
 def get_scoring_rules() -> ScoringRules:
     df = get_all_records("Rules")
     scoring = ScoringRules()
@@ -229,7 +257,7 @@ def get_scoring_rules() -> ScoringRules:
     return scoring
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=TTL_LIVE)
 def get_matches() -> list[Match]:
     df = get_all_records("Matches")
     matches = []
@@ -433,12 +461,12 @@ def get_match_squad(match_id: str) -> list[MatchSquadPlayer]:
     return players
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=TTL_DATA)
 def get_entries() -> pd.DataFrame:
     return get_all_records("Entries")
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=TTL_DATA)
 def get_fantasy_selections() -> pd.DataFrame:
     return get_all_records("FantasySelections")
 
@@ -556,8 +584,8 @@ def save_entry(username: str, match_id: str, players: list[dict]) -> str:
             1 if player.get("is_vice_captain") else 0,
         ])
     
-    for row in rows_to_append:
-        selections_worksheet.append_row(row)
+    if rows_to_append:
+        selections_worksheet.append_rows(rows_to_append, value_input_option='USER_ENTERED')
     
     if rows_to_append:
         start_row = current_row_count + 1
@@ -638,7 +666,12 @@ def save_entry(username: str, match_id: str, players: list[dict]) -> str:
     except Exception as e:
         print(f"Warning: Failed to update Validation/Leaderboard formulas: {e}")
         
-    clear_all_caches()
+    # Surgical Cache Clearing
+    get_all_records_data.clear()
+    get_all_records_live.clear()
+    get_entries.clear()
+    get_fantasy_selections.clear()
+    get_overall_leaderboard.clear()
     return entry_id
 
 
@@ -710,7 +743,7 @@ def delete_entry(entry_id: str):
     clear_all_caches()
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=TTL_LIVE, show_spinner=False)
 def get_player_points(match_id: str) -> pd.DataFrame:
     df = get_all_records("PlayerPoints")
     return df[df["MatchID"] == match_id]
@@ -746,7 +779,7 @@ def get_all_teams_for_match(match_id: str) -> list[FantasyTeam]:
 
 import bcrypt
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=TTL_DATA, show_spinner=False)
 def get_users() -> pd.DataFrame:
     return get_all_records("Users")
 
@@ -788,7 +821,7 @@ def verify_user(username: str, password: str) -> tuple[bool, bool]:
     return False, False
     
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=TTL_LIVE, show_spinner=False)
 def get_overall_leaderboard() -> pd.DataFrame:
     """
     Aggregates scores across completed matches only.
@@ -845,7 +878,7 @@ def get_overall_leaderboard() -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=TTL_LIVE, show_spinner=False)
 def get_player_stats_for_match(match_id: str) -> pd.DataFrame:
     """
     Returns statistics for all players in a match:
