@@ -786,3 +786,60 @@ def verify_user(username: str, password: str) -> tuple[bool, bool]:
             return bcrypt.checkpw(password.encode(), stored_hash.encode()), is_admin
     
     return False, False
+    
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_overall_leaderboard() -> pd.DataFrame:
+    """
+    Aggregates scores across completed matches only.
+    Returns DataFrame with: UserName, TotalPoints, Entries, Top3Finishes
+    """
+    try:
+        # Get completed match IDs
+        matches_df = get_all_records("Matches")
+        if matches_df.empty:
+            return pd.DataFrame()
+            
+        completed_match_ids = set(
+            matches_df[matches_df["Status"].astype(str).str.lower() == "complete"]["MatchID"].astype(str).tolist()
+        )
+        
+        if not completed_match_ids:
+            return pd.DataFrame()
+
+        df = get_all_records("Leaderboard")
+        if df.empty:
+            return pd.DataFrame()
+            
+        # Filter for completed matches and valid teams only
+        valid_df = df[
+            (df["Status"].astype(str).str.upper() == "VALID") & 
+            (df["MatchID"].astype(str).isin(completed_match_ids))
+        ].copy()
+        
+        if valid_df.empty:
+            return pd.DataFrame()
+            
+        # Ensure TotalPoints and Rank are numeric
+        valid_df["TotalPoints"] = pd.to_numeric(valid_df["TotalPoints"], errors="coerce").fillna(0)
+        valid_df["Rank"] = pd.to_numeric(valid_df["Rank"], errors="coerce").fillna(999)
+        
+        # Add a helper column for Top 3 Finishes
+        valid_df["IsTop3"] = (valid_df["Rank"] <= 3).astype(int)
+        
+        # Group by UserName
+        overall = valid_df.groupby("UserName").agg({
+            "TotalPoints": "sum",
+            "EntryID": "count",
+            "IsTop3": "sum"
+        }).reset_index()
+        
+        overall.columns = ["UserName", "TotalPoints", "Entries", "Top3Finishes"]
+        
+        # Sort by total points descending
+        overall = overall.sort_values(by="TotalPoints", ascending=False).reset_index(drop=True)
+        
+        return overall
+    except Exception as e:
+        st.error(f"Error fetching overall leaderboard: {e}")
+        return pd.DataFrame()
