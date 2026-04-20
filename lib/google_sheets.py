@@ -89,16 +89,7 @@ def get_gspread_client():
 
 
 def clear_all_caches():
-    get_gspread_client.clear()
-    get_rules.clear()
-    get_scoring_rules.clear()
-    get_matches.clear()
-    get_upcoming_matches.clear()
-    get_all_records.clear()
-    get_match_squad.clear()
-    get_entries.clear()
-    get_player_points.clear()
-    get_all_player_points.clear()
+    st.cache_data.clear()
 
 
 def get_spreadsheet():
@@ -168,6 +159,13 @@ def get_all_records(sheet_name: str) -> pd.DataFrame:
         return get_all_records_static(sheet_name)
     else:
         return get_all_records_data(sheet_name)
+
+# Attach clear method for backward compatibility
+def _clear_all_records_cache():
+    get_all_records_live.clear()
+    get_all_records_data.clear()
+    get_all_records_static.clear()
+get_all_records.clear = _clear_all_records_cache
 
 
 @st.cache_data(ttl=TTL_STATIC, show_spinner=False)
