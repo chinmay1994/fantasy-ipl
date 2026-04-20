@@ -542,6 +542,14 @@ def save_entry(username: str, match_id: str, players: list[dict]) -> str:
     if worksheet is None or selections_worksheet is None:
         raise Exception("Could not access worksheets")
     
+    # Second-layer validation to prevent corrupt data (e.g. 10 players or missing C/VC)
+    from lib.validators import validate_team
+    rules = get_rules()
+    validation = validate_team(players, rules)
+    if not validation.is_valid:
+        error_msg = f"Team validation failed: {', '.join(validation.errors)}"
+        raise Exception(error_msg)
+    
     existing_entry_id = entry_exists(username, match_id)
     
     if existing_entry_id:
