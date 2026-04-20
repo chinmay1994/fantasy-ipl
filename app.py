@@ -1224,34 +1224,6 @@ def render_overall_leaderboard():
     
     df["Rank"] = df["Rank"].apply(format_rank)
     
-    # Display top 3 highlights
-    top_3 = df.head(3)
-    cols = st.columns(3)
-    
-    for i, col in enumerate(cols):
-        if i < len(top_3):
-            row = top_3.iloc[i]
-            bg_color = "rgba(255, 215, 0, 0.1)" if i == 0 else "rgba(192, 192, 192, 0.1)" if i == 1 else "rgba(205, 127, 50, 0.1)"
-            border_color = "#ffd700" if i == 0 else "#c0c0c0" if i == 1 else "#cd7f32"
-            
-            with col:
-                st.markdown(f"""
-                <div style="
-                    padding: 1rem;
-                    border-radius: 0.5rem;
-                    background-color: {bg_color};
-                    border: 1px solid {border_color};
-                    text-align: center;
-                ">
-                    <h2 style="margin:0">{row['Rank'].split()[0]}</h2>
-                    <h3 style="margin:0">{row['UserName']}</h3>
-                    <h1 style="margin:0">{row['TotalPoints']:.0f}</h1>
-                    <p style="margin:0; opacity:0.8">{row['Top3Finishes']} Podium Finishes</p>
-                </div>
-                """, unsafe_allow_html=True)
-    
-    st.divider()
-    
     # Display the full leaderboard
     st.dataframe(
         df,
