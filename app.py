@@ -30,6 +30,7 @@ from lib.google_sheets import (
     add_user,
     get_users,
     get_overall_leaderboard,
+    get_player_stats_for_match,
 )
 from lib.validators import validate_team, get_team_stats
 from lib.scoring import calculate_team_total, calculate_team_with_player_scores
@@ -243,7 +244,11 @@ def main():
     if "page" not in st.session_state:
         st.session_state.page = "🏠 Home"
     
-    pages = ["🏠 Home", "📝 Create Team", "📋 My Teams", "🏆 All Teams", "🏆 Leaderboard"]
+    pages = ["🏠 Home", "📝 Create Team", "📋 My Teams", "👥 All Teams", "🏆 Leaderboard"]
+    live_matches = get_live_matches()
+    if live_matches:
+        pages.insert(1, "📊 Live Contest Stats")
+        
     if st.session_state.is_admin:
         pages.append("🔧 Admin")
     current_index = pages.index(st.session_state.page) if st.session_state.page in pages else 0
@@ -262,10 +267,12 @@ def main():
         render_create_team()
     elif page == "📋 My Teams":
         render_my_teams()
-    elif page == "🏆 All Teams":
+    elif page == "👥 All Teams":
         render_all_teams()
     elif page == "🏆 Leaderboard":
         render_overall_leaderboard()
+    elif page == "📊 Live Contest Stats":
+        render_live_stats()
     elif page == "🔧 Admin":
         render_admin()
 
@@ -630,7 +637,7 @@ def render_my_teams():
 
 
 def render_all_teams():
-    st.header("🏆 All Teams")
+    st.header("👥 All Teams")
     
     all_matches = get_matches()
     
@@ -1237,6 +1244,190 @@ def render_overall_leaderboard():
         hide_index=True,
         use_container_width=True,
     )
+
+
+def render_live_stats():
+    st.header("📊 Live Contest Stats")
+    
+    live_matches = get_live_matches()
+    if not live_matches:
+        st.info("No matches are currently live. Check back once a match starts!")
+        return
+        
+    if len(live_matches) > 1:
+        match_names = [m.match_name for m in live_matches]
+        selected_match_name = st.selectbox("Select Live Match", match_names)
+        match = next(m for m in live_matches if m.match_name == selected_match_name)
+    else:
+        match = live_matches[0]
+        st.subheader(f"📍 {match.match_name}")
+    
+    tab_stats, tab_compare = st.tabs(["📊 Player Stats", "🔄 Compare Entries"])
+    
+    with tab_stats:
+        with st.spinner("Loading live stats..."):
+            df = get_player_stats_for_match(match.match_id)
+            
+        if df.empty:
+            st.warning("No player statistics available for this match yet.")
+        else:
+            # Formatting for display
+            display_df = df.copy()
+            
+            # Add status emoji
+            def get_role_emoji(role):
+                return {"WK": "🧤", "BAT": "🏏", "AR": "🔄", "BWL": "🎳"}.get(role, "❓")
+                
+            display_df["Player"] = display_df.apply(lambda r: f"{get_role_emoji(r['Role'])} {r['PlayerName']}", axis=1)
+            
+            # Reorder and rename columns
+            display_df = display_df[["Player", "Team", "TotalPts", "SelectedBy"]]
+            display_df.columns = ["Player Name", "Team", "Points Scored", "Selected By"]
+            
+            # Metrics for quick overview
+            m_cols = st.columns(3)
+            with m_cols[0]:
+                top_scorer = df.iloc[0]
+                st.metric("Top Scorer", top_scorer["PlayerName"], f"{top_scorer['TotalPts']:.0f} pts")
+            with m_cols[1]:
+                most_selected = df.loc[df["SelectedBy"].idxmax()]
+                st.metric("Most Selected", most_selected["PlayerName"], f"{most_selected['SelectedBy']} picks")
+            with m_cols[2]:
+                total_participants = df["SelectedBy"].sum() / 11 # approximate
+                st.metric("Contestants", f"{total_participants:.0f}")
+                
+            st.divider()
+            
+            # Display the table
+            st.dataframe(
+                display_df,
+                column_config={
+                    "Player Name": st.column_config.TextColumn("Player Name", width="large"),
+                    "Team": st.column_config.TextColumn("Team", width="small"),
+                    "Points Scored": st.column_config.NumberColumn("Points", format="%.1f", help="Points scored in this match so far"),
+                    "Selected By": st.column_config.NumberColumn("Selected By", format="%d", help="How many participants picked this player"),
+                },
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    with tab_compare:
+        all_teams = get_all_teams_for_match(match.match_id)
+        if not all_teams:
+            st.info("No teams submitted for this match.")
+        else:
+            # 1. Find Current User's Team
+            my_team = next((t for t in all_teams if t.user_name.lower() == st.session_state.username.lower()), None)
+            
+            if not my_team:
+                st.warning("You haven't submitted a team for this match. Comparison is only available between your team and others.")
+            else:
+                other_teams = [t for t in all_teams if t.user_name.lower() != st.session_state.username.lower()]
+                
+                if not other_teams:
+                    st.info("No other participants to compare with yet.")
+                else:
+                    other_user = st.selectbox("Select contestant to compare with", [t.user_name for t in other_teams])
+                    their_team = next(t for t in other_teams if t.user_name == other_user)
+                    
+                    # Get scoring rules and player points for calculation
+                    scoring_rules = get_scoring_rules()
+                    player_points_df = get_player_points(match.match_id)
+                    player_points_dict = {row["PlayerID"]: row["TotalPts"] for _, row in player_points_df.iterrows()} if not player_points_df.empty else {}
+                    
+                    def get_points(p_id, is_c, is_vc):
+                        pts = float(player_points_dict.get(p_id, 0))
+                        if is_c: return pts * 2
+                        if is_vc: return pts * 1.5
+                        return pts
+
+                    # 2. Comparison Logic
+                    my_players = {p.player_id: p for p in my_team.players}
+                    their_players = {p.player_id: p for p in their_team.players}
+                    
+                    # Section 1: Different Players
+                    my_unique = [p for p_id, p in my_players.items() if p_id not in their_players]
+                    their_unique = [p for p_id, p in their_players.items() if p_id not in my_players]
+                    
+                    # Section 2: Same Players, Different Roles
+                    role_diff = []
+                    for p_id, p in my_players.items():
+                        if p_id in their_players:
+                            tp = their_players[p_id]
+                            if p.is_captain != tp.is_captain or p.is_vice_captain != tp.is_vice_captain:
+                                role_diff.append((p, tp))
+                                
+                    # Section 3: Same Players, Same Roles
+                    common = []
+                    for p_id, p in my_players.items():
+                        if p_id in their_players:
+                            tp = their_players[p_id]
+                            if p.is_captain == tp.is_captain and p.is_vice_captain == tp.is_vice_captain:
+                                common.append(p)
+
+                    st.markdown("### 🔍 Side-by-Side Comparison")
+                    
+                    # Display Differences
+                    with st.expander("🛡️ Different Players", expanded=True):
+                        c1, c2 = st.columns(2)
+                        my_pts = sum(get_points(p.player_id, p.is_captain, p.is_vice_captain) for p in my_unique)
+                        their_pts = sum(get_points(p.player_id, p.is_captain, p.is_vice_captain) for p in their_unique)
+                        diff = my_pts - their_pts
+                        
+                        with c1:
+                            st.markdown(f"**Your Unique Picks** ({my_pts:.1f} pts)")
+                            for p in my_unique:
+                                role = " (C)" if p.is_captain else " (VC)" if p.is_vice_captain else ""
+                                st.caption(f"• {p.player_name}{role} - {get_points(p.player_id, p.is_captain, p.is_vice_captain):.1f}")
+                        with c2:
+                            st.markdown(f"**{other_user}'s Unique Picks** ({their_pts:.1f} pts)")
+                            for p in their_unique:
+                                role = " (C)" if p.is_captain else " (VC)" if p.is_vice_captain else ""
+                                st.caption(f"• {p.player_name}{role} - {get_points(p.player_id, p.is_captain, p.is_vice_captain):.1f}")
+                        
+                        if diff != 0:
+                            color = "green" if diff > 0 else "red"
+                            lead = "ahead" if diff > 0 else "behind"
+                            st.markdown(f"<p style='text-align:center; color:{color}; font-weight:bold;'>You are {abs(diff):.1f} pts {lead} in this section</p>", unsafe_allow_html=True)
+
+                    with st.expander("🔄 Same Players, Different Roles", expanded=True):
+                        if not role_diff:
+                            st.info("No players shared with different roles.")
+                        else:
+                            c1, c2 = st.columns(2)
+                            my_r_pts = sum(get_points(p.player_id, p.is_captain, p.is_vice_captain) for p, _ in role_diff)
+                            their_r_pts = sum(get_points(tp.player_id, tp.is_captain, tp.is_vice_captain) for _, tp in role_diff)
+                            r_diff = my_r_pts - their_r_pts
+                            
+                            with c1:
+                                st.markdown(f"**Your Role Picks** ({my_r_pts:.1f} pts)")
+                                for p, tp in role_diff:
+                                    role = " (C)" if p.is_captain else " (VC)" if p.is_vice_captain else " (Normal)"
+                                    st.caption(f"• {p.player_name}{role} - {get_points(p.player_id, p.is_captain, p.is_vice_captain):.1f}")
+                            with c2:
+                                st.markdown(f"**{other_user}'s Role Picks** ({their_r_pts:.1f} pts)")
+                                for p, tp in role_diff:
+                                    role = " (C)" if tp.is_captain else " (VC)" if tp.is_vice_captain else " (Normal)"
+                                    st.caption(f"• {tp.player_name}{role} - {get_points(tp.player_id, tp.is_captain, tp.is_vice_captain):.1f}")
+                            
+                            if r_diff != 0:
+                                color = "green" if r_diff > 0 else "red"
+                                lead = "ahead" if r_diff > 0 else "behind"
+                                st.markdown(f"<p style='text-align:center; color:{color}; font-weight:bold;'>You are {abs(r_diff):.1f} pts {lead} on role picks</p>", unsafe_allow_html=True)
+
+                    with st.expander("🤝 Common Players (Same Role)", expanded=False):
+                        if not common:
+                            st.info("No players shared with identical roles.")
+                        else:
+                            c1, c2 = st.columns(2)
+                            with c1:
+                                for p in common[:len(common)//2 + 1]:
+                                    role = " (C)" if p.is_captain else " (VC)" if p.is_vice_captain else ""
+                                    st.caption(f"• {p.player_name}{role} - {get_points(p.player_id, p.is_captain, p.is_vice_captain):.1f}")
+                            with c2:
+                                for p in common[len(common)//2 + 1:]:
+                                    role = " (C)" if p.is_captain else " (VC)" if p.is_vice_captain else ""
+                                    st.caption(f"• {p.player_name}{role} - {get_points(p.player_id, p.is_captain, p.is_vice_captain):.1f}")
 
 
 if __name__ == "__main__":

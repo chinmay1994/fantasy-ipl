@@ -843,3 +843,58 @@ def get_overall_leaderboard() -> pd.DataFrame:
     except Exception as e:
         st.error(f"Error fetching overall leaderboard: {e}")
         return pd.DataFrame()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_player_stats_for_match(match_id: str) -> pd.DataFrame:
+    """
+    Returns statistics for all players in a match:
+    Points scored and selection frequency by participants.
+    """
+    try:
+        # 1. Get Match Squad (all eligible players)
+        squad = get_match_squad(match_id)
+        if not squad:
+            return pd.DataFrame()
+            
+        # Create base dataframe from squad
+        stats = pd.DataFrame([{
+            "PlayerID": p.player_id,
+            "PlayerName": p.player_name,
+            "Team": p.real_team,
+            "Role": p.role,
+            "InXI": p.in_starting_xi
+        } for p in squad])
+        
+        # 2. Get Player Points
+        points_df = get_player_points(match_id)
+        if not points_df.empty:
+            points_df = points_df[["PlayerID", "TotalPts"]].copy()
+            points_df["TotalPts"] = pd.to_numeric(points_df["TotalPts"], errors="coerce").fillna(0)
+            stats = stats.merge(points_df, on="PlayerID", how="left")
+        else:
+            stats["TotalPts"] = 0
+            
+        stats["TotalPts"] = stats["TotalPts"].fillna(0)
+        
+        # 3. Get Selection Frequency
+        # We'll use FantasySelections sheet directly for speed
+        all_selections = get_fantasy_selections()
+        if not all_selections.empty and "MatchID" in all_selections.columns:
+            match_selections = all_selections[all_selections["MatchID"].astype(str) == str(match_id)]
+            selection_counts = match_selections["PlayerID"].value_counts().reset_index()
+            selection_counts.columns = ["PlayerID", "SelectedBy"]
+            stats = stats.merge(selection_counts, on="PlayerID", how="left")
+        else:
+            stats["SelectedBy"] = 0
+            
+        stats["SelectedBy"] = stats["SelectedBy"].fillna(0).astype(int)
+        
+        # 4. Final sorting and cleanup
+        stats = stats.sort_values(by="TotalPts", ascending=False).reset_index(drop=True)
+        
+        return stats
+        
+    except Exception as e:
+        st.error(f"Error fetching player stats: {e}")
+        return pd.DataFrame()
