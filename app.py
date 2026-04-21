@@ -167,7 +167,14 @@ authenticator = get_authenticator()
 def main():
     st.title("🏏 Fantasy IPL")
     
-    # Consolidated deep link handling
+    if not st.session_state.username:
+        # Check native browser cookies (bypasses iframe blocks in iOS Safari)
+        if hasattr(st, "context") and 'fantasy_ipl_cookie' in st.context.cookies:
+            # If the cookie exists at the top level, let the authenticator try to pick it up
+            # We don't need to do anything special here as the authenticator.login() 
+            # below will see the cookie if it's in the request headers.
+            pass
+        
     if "match_id" in st.query_params:
         shared_id = st.query_params["match_id"]
         # If it's a new link, trigger the redirection
