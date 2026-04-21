@@ -161,6 +161,16 @@ def get_authenticator():
         cookie_expiry_days=30
     )
 
+def set_cookie_safari_cloud(name, value, days=30):
+    # This uses SameSite=None and Secure, which is required for Safari in iframes (Streamlit Cloud)
+    expiry = (datetime.now() + timedelta(days=days)).strftime("%a, %d %b %Y %H:%M:%S GMT")
+    components.html(f"""
+        <script>
+            window.parent.document.cookie = "{name}={value}; expires={expiry}; path=/; SameSite=None; Secure";
+            document.cookie = "{name}={value}; expires={expiry}; path=/; SameSite=None; Secure";
+        </script>
+    """, height=0)
+
 authenticator = get_authenticator()
 
 
@@ -168,12 +178,16 @@ def main():
     st.title("🏏 Fantasy IPL")
     
     if not st.session_state.username:
-        # Check native browser cookies (bypasses iframe blocks in iOS Safari)
-        if hasattr(st, "context") and 'fantasy_ipl_cookie' in st.context.cookies:
-            # If the cookie exists at the top level, let the authenticator try to pick it up
-            # We don't need to do anything special here as the authenticator.login() 
-            # below will see the cookie if it's in the request headers.
-            pass
+        # Check native browser cookies (Safari Bridge)
+        if hasattr(st, "context"):
+            # Check if our Safari-specific bridge cookie exists
+            bridge_token = st.context.cookies.get('safari_auth_token')
+            if bridge_token:
+                username = verify_session_token(bridge_token)
+                if username:
+                    st.session_state.username = username
+                    st.session_state.is_admin = st.session_state.get('admin_mapping', {}).get(username, False)
+                    # Don't rerun yet, let the authenticator also see it if possible
         
     if "match_id" in st.query_params:
         shared_id = st.query_params["match_id"]
@@ -201,8 +215,11 @@ def main():
                     
                     if authentication_status:
                         st.session_state.username = username
-                        # Determine is_admin from our session_state mapping
                         st.session_state.is_admin = st.session_state.get('admin_mapping', {}).get(username, False)
+                        
+                        # Set the Safari Bridge cookie
+                        token = create_session_token(username)
+                        set_cookie_safari_cloud('safari_auth_token', token, days=30)
                         
                         # Handle deep link redirection after login
                         if st.session_state.get("shared_match_id"):
