@@ -117,6 +117,9 @@ if "vice_captain" not in st.session_state:
 if "is_submitting" not in st.session_state:
     st.session_state.is_submitting = False
 
+if "shared_match_id" not in st.session_state:
+    st.session_state.shared_match_id = None
+
 if "is_admin" not in st.session_state:
     st.session_state.is_admin = False
 
@@ -145,6 +148,17 @@ if not st.session_state.username:
 
 def main():
     st.title("🏏 Fantasy IPL")
+    
+    # Consolidated deep link handling
+    if "match_id" in st.query_params:
+        shared_id = st.query_params["match_id"]
+        # If it's a new link, trigger the redirection
+        if st.session_state.get("last_processed_match_id") != shared_id:
+            st.session_state.shared_match_id = shared_id
+            st.session_state.page = "📝 Create Team"
+            st.session_state.last_processed_match_id = shared_id
+            # Clear query params immediately to clean the address bar
+            st.query_params.clear()
     
     if not st.session_state.username:
         with st.container():
@@ -177,6 +191,11 @@ def main():
                                     token = create_session_token(username)
                                     cookies["fantasy_ipl_user"] = token
                                     cookies.save()
+                                    
+                                    # Handle deep link redirection after login
+                                    if st.session_state.get("shared_match_id"):
+                                        st.session_state.page = "📝 Create Team"
+                                    
                                     st.rerun()
                                 else:
                                     st.error("Invalid username or password")
@@ -236,9 +255,6 @@ def main():
             cookies["fantasy_ipl_user"] = ""
             cookies.save()
             st.rerun()
-    
-    if "page" not in st.session_state:
-        st.session_state.page = "🏠 Home"
     
     if "page" not in st.session_state:
         st.session_state.page = "🏠 Home"
@@ -480,6 +496,15 @@ def render_create_team():
     if "create_team_index" not in st.session_state:
         st.session_state.create_team_index = 0
     
+    # Handle deep link redirection logic
+    if st.session_state.get("shared_match_id"):
+        shared_id = st.session_state.shared_match_id
+        for i, m in enumerate(upcoming_matches_sorted):
+            if m.match_id == shared_id:
+                st.session_state.create_team_index = i
+                break
+        st.session_state.shared_match_id = None
+    
     current_idx = st.session_state.create_team_index
     current_idx = max(0, min(current_idx, len(upcoming_matches_sorted) - 1))
     st.session_state.create_team_index = current_idx
@@ -498,9 +523,19 @@ def render_create_team():
     
     with col_title:
         status_emoji = "🔴" if is_match_live(selected_match) else "📌"
-        match_time = selected_match.start_time.strftime('%Y-%m-%d %H:%M') if selected_match.start_time else "TBD"
         st.markdown(f"### {status_emoji} {selected_match.match_name}")
-        st.caption(f"{match_time} ({current_idx + 1}/{len(upcoming_matches_sorted)})")
+        st.caption(f"Starts at: {selected_match.start_time.strftime('%Y-%m-%d %H:%M') if selected_match.start_time else 'TBD'}")
+        
+        # Share Button - Only show for UPCOMING matches (not live, not started)
+        match_started = selected_match.start_time and selected_match.start_time <= now_ist()
+        is_live = is_match_live(selected_match)
+        
+        if not match_started and not is_live:
+            base_url = st.secrets.get("general", {}).get("BASE_URL", "http://localhost:8501")
+            share_url = f"{base_url}/?match_id={selected_match.match_id}"
+            if st.button("🔗 Share Contest", key=f"share_{selected_match.match_id}"):
+                st.code(f"Join my {selected_match.match_name} contest on Fantasy IPL!\n{share_url}", language="text")
+                st.toast("Link generated! Copy it above.")
     
     with col_next:
         if st.button("Next ➡️", disabled=current_idx == len(upcoming_matches_sorted) - 1, key="create_team_next"):
