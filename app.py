@@ -166,8 +166,19 @@ def set_cookie_safari_cloud(name, value, days=30):
     expiry = (datetime.now() + timedelta(days=days)).strftime("%a, %d %b %Y %H:%M:%S GMT")
     components.html(f"""
         <script>
-            window.parent.document.cookie = "{name}={value}; expires={expiry}; path=/; SameSite=None; Secure";
-            document.cookie = "{name}={value}; expires={expiry}; path=/; SameSite=None; Secure";
+            try {{
+                var cookieStr = "{name}={value}; expires={expiry}; path=/; SameSite=None; Secure";
+                console.log("Setting bridge cookie...");
+                document.cookie = cookieStr;
+                try {{
+                    window.parent.document.cookie = cookieStr;
+                    console.log("Parent cookie set successfully");
+                }} catch(e) {{
+                    console.log("Note: Parent window cookie access blocked (expected on Streamlit Cloud)");
+                }}
+            }} catch(e) {{
+                console.log("Cookie error:", e);
+            }}
         </script>
     """, height=0)
 
@@ -178,6 +189,10 @@ def main():
     st.title("🏏 Fantasy IPL")
     
     if not st.session_state.username:
+        # Debug: Visible on your staging app
+        if hasattr(st, "context"):
+            st.sidebar.write("Debug Cookies:", list(st.context.cookies.keys()))
+            
         # Check native browser cookies (Safari Bridge)
         if hasattr(st, "context"):
             # Check if our Safari-specific bridge cookie exists
