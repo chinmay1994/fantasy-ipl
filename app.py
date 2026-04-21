@@ -5,7 +5,7 @@ import hmac
 import base64
 import time
 import uuid
-from streamlit_cookies_manager import EncryptedCookieManager
+import streamlit_authenticator as stauth
 from lib.google_sheets import (
     get_matches,
     get_upcoming_matches,
@@ -126,24 +126,42 @@ if "is_admin" not in st.session_state:
 if "pending_writes" not in st.session_state:
     st.session_state.pending_writes = []
 
-COOKIE_PASSWORD = "fantasy_ipl_secret_2024"
+def get_authenticator():
+    users_df = get_users()
+    credentials = {'usernames': {}}
+    
+    if users_df.empty:
+        return stauth.Authenticate({'usernames': {}}, 'fantasy_ipl_cookie', 'fantasy_ipl_key', cookie_expiry_days=30)
 
-cookies = EncryptedCookieManager(prefix="ipl-di/", password=COOKIE_PASSWORD)
-if not cookies.ready():
-    st.stop()
+    # Robust column mapping (case-insensitive)
+    cols = {c.lower().replace("_", ""): c for c in users_df.columns}
+    uname_col = cols.get('username')
+    pword_col = cols.get('password')
+    admin_col = cols.get('isadmin')
+    
+    admin_mapping = {}
+    for _, row in users_df.iterrows():
+        uname = str(row[uname_col]) if uname_col else str(row.iloc[0])
+        pword = str(row[pword_col]) if pword_col else str(row.iloc[1])
+        is_admin_val = str(row[admin_col]) if admin_col else (str(row.iloc[2]) if len(row) > 2 else 'FALSE')
+        is_admin = is_admin_val.strip().upper() == 'TRUE'
+        
+        credentials['usernames'][uname] = {
+            'name': uname,
+            'password': pword
+        }
+        admin_mapping[uname] = is_admin
+    
+    st.session_state.admin_mapping = admin_mapping
+    
+    return stauth.Authenticate(
+        credentials,
+        'fantasy_ipl_cookie',
+        'fantasy_ipl_key',
+        cookie_expiry_days=30
+    )
 
-if not st.session_state.username:
-    stored_token = cookies.get("fantasy_ipl_user")
-    if stored_token:
-        username = verify_session_token(stored_token)
-        if username:
-            st.session_state.username = username
-            from lib.google_sheets import get_users
-            users_df = get_users()
-            if not users_df.empty and "UserName" in users_df.columns:
-                user_row = users_df[users_df["UserName"].str.lower() == username.lower()]
-                if not user_row.empty and len(user_row.columns) > 2:
-                    st.session_state.is_admin = str(user_row.iloc[0]["isAdmin"]).strip().upper() == "TRUE"
+authenticator = get_authenticator()
 
 
 def main():
@@ -167,42 +185,24 @@ def main():
                 tab_login, tab_signup = st.tabs(["Login", "Sign Up"])
                 
                 with tab_login:
-                    st.subheader("Enter your username to continue")
-                    with st.form("login_form"):
-                        username = st.text_input(
-                            "Username",
-                            placeholder="Enter your username",
-                            label_visibility="collapsed",
-                            key="username_input",
-                        )
-                        password = st.text_input(
-                            "Password",
-                            type="password",
-                            placeholder="Enter your password",
-                            label_visibility="collapsed",
-                            key="password_input",
-                        )
-                        if st.form_submit_button("Login", use_container_width=True):
-                            if username and password:
-                                is_valid, is_admin = verify_user(username, password)
-                                if is_valid:
-                                    st.session_state.username = username
-                                    st.session_state.is_admin = is_admin
-                                    token = create_session_token(username)
-                                    cookies["fantasy_ipl_user"] = token
-                                    cookies.save()
-                                    
-                                    # Handle deep link redirection after login
-                                    if st.session_state.get("shared_match_id"):
-                                        st.session_state.page = "📝 Create Team"
-                                    
-                                    st.rerun()
-                                else:
-                                    st.error("Invalid username or password")
-                            elif not username:
-                                st.warning("Please enter your username")
-                            elif not password:
-                                st.warning("Please enter your password")
+                    # Use the authenticator's login widget
+                    # In newer versions, login() updates session_state directly
+                    authenticator.login(location='main')
+                    
+                    authentication_status = st.session_state.get('authentication_status')
+                    username = st.session_state.get('username')
+                    
+                    if authentication_status:
+                        st.session_state.username = username
+                        # Determine is_admin from our session_state mapping
+                        st.session_state.is_admin = st.session_state.get('admin_mapping', {}).get(username, False)
+                        
+                        # Handle deep link redirection after login
+                        if st.session_state.get("shared_match_id"):
+                            st.session_state.page = "📝 Create Team"
+                        st.rerun()
+                    elif authentication_status is False:
+                        st.error("Username/password is incorrect")
                 
                 with tab_signup:
                     st.subheader("Create a new account")
@@ -252,8 +252,7 @@ def main():
     with action_cols[2]:
         if st.button("🚪", key="logout_btn"):
             st.session_state.username = ""
-            cookies["fantasy_ipl_user"] = ""
-            cookies.save()
+            authenticator.logout(location='unrendered')
             st.rerun()
     
     if "page" not in st.session_state:
