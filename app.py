@@ -159,6 +159,16 @@ def get_user_permissions(email):
 def main():
     st.title("🏏 Fantasy IPL")
     
+    # Handle deep link handling - BEFORE login check
+    # Store share match_id in session_state so it persists through login flow
+    if "match_id" in st.query_params:
+        pending_match = st.query_params["match_id"]
+        if st.session_state.get("last_processed_match_id") != pending_match:
+            st.session_state.last_processed_match_id = pending_match
+        st.session_state.pending_shared_match = pending_match
+    
+    pending_shared_match = st.session_state.get("pending_shared_match")
+    
     # 1. Check if user is logged in via native Streamlit Auth
     if not st.session_state.get('username') and st.user.get('is_logged_in'):
         email = st.user.get('email')
@@ -184,24 +194,21 @@ def main():
         
         st.session_state.username = username
         st.session_state.is_admin = is_admin
-            
-    # Handle deep link handling
-    if "match_id" in st.query_params:
-        shared_id = st.query_params["match_id"]
-        if st.session_state.get("last_processed_match_id") != shared_id:
-            st.session_state.last_processed_match_id = shared_id
-            if st.session_state.get('username'):
-                st.session_state.page = "📝 Create Team"
-            st.session_state.shared_match_id = shared_id
-            st.session_state.page = "📝 Create Team"
-            st.session_state.last_processed_match_id = shared_id
-            # Clear query params immediately to clean the address bar
-            st.query_params.clear()
+    
+    # Now handle the pending shared match after login is complete
+    if pending_shared_match:
+        st.session_state.shared_match_id = pending_shared_match
+        st.session_state.page = "📝 Create Team"
+        # Clear the pending match and query params now that we've handled them
+        st.session_state.pop("pending_shared_match", None)
+        st.query_params.clear()
     
     if not st.session_state.get('username'):
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.info("Please login to participate in Fantasy IPL")
+            if pending_shared_match:
+                st.session_state.shared_match_id = pending_shared_match
             # Auth0 allows users to use their existing username/password
             if st.button("🔐 Login to Fantasy IPL", use_container_width=True):
                 st.login(provider="auth0")
