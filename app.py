@@ -103,16 +103,30 @@ if "pending_writes" not in st.session_state:
 # Authentication is now handled natively via st.login and Auth0
 def get_user_permissions(email):
     users_df = get_users()
-    if not users_df.empty:
-        cols = {c.lower().replace("_", ""): c for c in users_df.columns}
-        email_col = cols.get('email') or cols.get('username')
-        admin_col = cols.get('isadmin')
-        user_row = users_df[users_df[email_col].str.lower() == email.lower()] if email_col else pd.DataFrame()
-        if not user_row.empty:
-            username = str(user_row.iloc[0][cols.get('username') or email_col])
-            is_admin = str(user_row.iloc[0][admin_col]).strip().upper() == 'TRUE' if admin_col else False
-            return username, is_admin
-    return email, False
+    if users_df.empty:
+        return email.split('@')[0], False
+    
+    cols = {c.lower().replace("_", "").replace(" ", ""): c for c in users_df.columns}
+    email_col = cols.get('email') or cols.get('username')
+    if not email_col:
+        return email.split('@')[0], False
+    
+    user_row = users_df[users_df[email_col].str.lower() == email.lower()]
+    if user_row.empty:
+        return email.split('@')[0], False
+    
+    username_col = cols.get('username')
+    if username_col:
+        username = str(user_row.iloc[0][username_col])
+    else:
+        username = str(user_row.iloc[0][email_col])
+    
+    admin_col = cols.get('isadmin')
+    is_admin = False
+    if admin_col:
+        is_admin = str(user_row.iloc[0][admin_col]).strip().upper() == 'TRUE'
+    
+    return username, is_admin
 
 
 def main():
@@ -121,7 +135,28 @@ def main():
     # 1. Check if user is logged in via native Streamlit Auth
     if not st.session_state.get('username') and st.user.get('is_logged_in'):
         email = st.user.get('email')
-        username, is_admin = get_user_permissions(email)
+        
+        # Try to get username from Auth0 token (custom claim or nickname)
+        username = None
+        is_admin = False
+        try:
+            import jwt
+            token = st.session_state.get('id_token')
+            if token:
+                decoded = jwt.decode(token, options={"verify_signature": False})
+                namespace = "https://fantasy-ipl-jzkkjtdefhinycqj32ebmq.streamlit.app"
+                username = decoded.get(f"{namespace}/username") or decoded.get("nickname")
+                print(f"DEBUG: token username = {username}")
+        except Exception as e:
+            print(f"DEBUG token decode error: {e}")
+        
+        # Get is_admin from Users sheet (lookup by email or username)
+        if username:
+            _, is_admin = get_user_permissions(email)
+        else:
+            username, is_admin = get_user_permissions(email)
+        
+        print(f"DEBUG: final username = {username}, is_admin = {is_admin}")
         st.session_state.username = username
         st.session_state.is_admin = is_admin
             
