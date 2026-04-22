@@ -421,7 +421,7 @@ def get_match_score(match_id: str) -> str:
                 balls = int((max_over - overs) * 10)
             except:
                 overs, balls = 0, 0
-        return f"({total}/{wickets}, {overs}.{balls} overs)"
+        return f"({runs}/{wickets}, {overs}.{balls} overs)"
     
     score_inn1 = calc_innings_score(1)
     score_inn2 = calc_innings_score(2)
