@@ -1373,12 +1373,25 @@ def render_live_stats():
                 if not other_teams:
                     st.info("No other participants to compare with yet.")
                 else:
-                    other_user = st.selectbox("Select contestant to compare with", [t.user_name for t in other_teams])
-                    their_team = next(t for t in other_teams if t.user_name == other_user)
-                    
-                    # Get scoring rules and player points for calculation
+                    # Get data once (already cached)
                     scoring_rules = get_scoring_rules()
                     player_points_df = get_player_points(match.match_id)
+                    
+                    # Calculate and sort by points
+                    if not player_points_df.empty:
+                        other_teams_with_points = []
+                        for t in other_teams:
+                            team_points = calculate_team_total(t.players, player_points_df, scoring_rules)
+                            other_teams_with_points.append((t, team_points))
+                        other_teams_with_points.sort(key=lambda x: x[1], reverse=True)
+                        options = [f"{t.user_name} ({pts:.1f} pts)" for t, pts in other_teams_with_points]
+                        other_teams = [t for t, _ in other_teams_with_points]
+                    else:
+                        options = [t.user_name for t in other_teams]
+                    
+                    other_user = st.selectbox("Select contestant to compare with", options)
+                    their_team = next((t for t in other_teams if t.user_name == other_user or other_user.startswith(t.user_name + " (")), None)
+                    
                     player_points_dict = {row["PlayerID"]: row["TotalPts"] for _, row in player_points_df.iterrows()} if not player_points_df.empty else {}
                     
                     def get_points(p_id, is_c, is_vc):
