@@ -392,11 +392,35 @@ def get_match_score(match_id: str) -> str:
         except:
             wickets = 0
         try:
-            max_over = inn_df["Over"].astype(float).max()
-            overs = int(max_over)
-            balls = int((max_over - overs) * 10)
-        except:
-            overs, balls = 0, 0
+            # Ensure Over and Ball are numeric for correct sorting and calculation
+            inn_df = inn_df.copy()
+            inn_df["Over"] = pd.to_numeric(inn_df["Over"], errors='coerce')
+            inn_df["Ball"] = pd.to_numeric(inn_df["Ball"], errors='coerce')
+            
+            # Sort by Over and Ball to find the actual latest delivery
+            sorted_df = inn_df.dropna(subset=["Over", "Ball"]).sort_values(["Over", "Ball"])
+            
+            if sorted_df.empty:
+                return None
+                
+            latest = sorted_df.iloc[-1]
+            over_val = int(latest["Over"])
+            ball_val = int(latest["Ball"])
+            
+            # Standard cricket notation: (Over-1).Ball
+            # If Ball is 6, it's a completed over.
+            if ball_val >= 6:
+                overs, balls = over_val, 0
+            else:
+                overs, balls = over_val - 1, ball_val
+        except Exception as e:
+            # Fallback to simple max over if sorting fails
+            try:
+                max_over = pd.to_numeric(inn_df["Over"], errors='coerce').max()
+                overs = int(max_over)
+                balls = int((max_over - overs) * 10)
+            except:
+                overs, balls = 0, 0
         return f"({total}/{wickets}, {overs}.{balls} overs)"
     
     score_inn1 = calc_innings_score(1)

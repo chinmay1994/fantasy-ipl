@@ -1,11 +1,9 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
-import hmac
+from datetime import datetime, timedelta
 import base64
 import time
 import uuid
-from streamlit_cookies_manager import EncryptedCookieManager
 from lib.google_sheets import (
     get_matches,
     get_upcoming_matches,
@@ -36,9 +34,6 @@ from lib.validators import validate_team, get_team_stats
 from lib.scoring import calculate_team_total, calculate_team_with_player_scores
 
 
-SECRET_KEY = st.secrets.get("SECRET_KEY", "fallback_secret_key")
-
-
 @st.fragment(run_every=1)
 def render_home_countdown():
     live_matches = get_live_matches()
@@ -62,27 +57,6 @@ def render_home_countdown():
     else:
         st.session_state.home_countdown = 60
 
-def create_session_token(username: str) -> str:
-    payload = f"{username}|{int(time.time())}"
-    signature = hmac.new(SECRET_KEY.encode(), payload.encode(), "sha256").hexdigest()[:16]
-    token = f"{payload}|{signature}"
-    return base64.b64encode(token.encode()).decode()
-
-def verify_session_token(token: str) -> str | None:
-    try:
-        decoded = base64.b64decode(token).decode()
-        parts = decoded.split("|")
-        if len(parts) != 3:
-            return None
-        username, timestamp, signature = parts
-        expected_sig = hmac.new(SECRET_KEY.encode(), f"{username}|{timestamp}".encode(), "sha256").hexdigest()[:16]
-        if signature != expected_sig:
-            return None
-        if int(time.time()) - int(timestamp) > 86400 * 30:
-            return None
-        return username
-    except:
-        return None
 
 
 st.set_page_config(
@@ -126,135 +100,78 @@ if "is_admin" not in st.session_state:
 if "pending_writes" not in st.session_state:
     st.session_state.pending_writes = []
 
-COOKIE_PASSWORD = "fantasy_ipl_secret_2024"
-
-cookies = EncryptedCookieManager(prefix="ipl-di/", password=COOKIE_PASSWORD)
-if not cookies.ready():
-    st.stop()
-
-if not st.session_state.username:
-    stored_token = cookies.get("fantasy_ipl_user")
-    if stored_token:
-        username = verify_session_token(stored_token)
-        if username:
-            st.session_state.username = username
-            from lib.google_sheets import get_users
-            users_df = get_users()
-            if not users_df.empty and "UserName" in users_df.columns:
-                user_row = users_df[users_df["UserName"].str.lower() == username.lower()]
-                if not user_row.empty and len(user_row.columns) > 2:
-                    st.session_state.is_admin = str(user_row.iloc[0]["isAdmin"]).strip().upper() == "TRUE"
+# Authentication is now handled natively via st.login and Auth0
+def get_user_permissions(email):
+    users_df = get_users()
+    if not users_df.empty:
+        cols = {c.lower().replace("_", ""): c for c in users_df.columns}
+        email_col = cols.get('email') or cols.get('username')
+        admin_col = cols.get('isadmin')
+        user_row = users_df[users_df[email_col].str.lower() == email.lower()] if email_col else pd.DataFrame()
+        if not user_row.empty:
+            username = str(user_row.iloc[0][cols.get('username') or email_col])
+            is_admin = str(user_row.iloc[0][admin_col]).strip().upper() == 'TRUE' if admin_col else False
+            return username, is_admin
+    return email, False
 
 
 def main():
     st.title("🏏 Fantasy IPL")
     
-    # Consolidated deep link handling
+    # 1. Check if user is logged in via native Streamlit Auth
+    if not st.session_state.get('username') and st.user.get('is_logged_in'):
+        email = st.user.get('email')
+        username, is_admin = get_user_permissions(email)
+        st.session_state.username = username
+        st.session_state.is_admin = is_admin
+            
+    # Handle deep link handling
     if "match_id" in st.query_params:
         shared_id = st.query_params["match_id"]
-        # If it's a new link, trigger the redirection
         if st.session_state.get("last_processed_match_id") != shared_id:
+            st.session_state.last_processed_match_id = shared_id
+            if st.session_state.get('username'):
+                st.session_state.page = "📝 Create Team"
             st.session_state.shared_match_id = shared_id
             st.session_state.page = "📝 Create Team"
             st.session_state.last_processed_match_id = shared_id
             # Clear query params immediately to clean the address bar
             st.query_params.clear()
     
-    if not st.session_state.username:
-        with st.container():
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                tab_login, tab_signup = st.tabs(["Login", "Sign Up"])
-                
-                with tab_login:
-                    st.subheader("Enter your username to continue")
-                    with st.form("login_form"):
-                        username = st.text_input(
-                            "Username",
-                            placeholder="Enter your username",
-                            label_visibility="collapsed",
-                            key="username_input",
-                        )
-                        password = st.text_input(
-                            "Password",
-                            type="password",
-                            placeholder="Enter your password",
-                            label_visibility="collapsed",
-                            key="password_input",
-                        )
-                        if st.form_submit_button("Login", use_container_width=True):
-                            if username and password:
-                                is_valid, is_admin = verify_user(username, password)
-                                if is_valid:
-                                    st.session_state.username = username
-                                    st.session_state.is_admin = is_admin
-                                    token = create_session_token(username)
-                                    cookies["fantasy_ipl_user"] = token
-                                    cookies.save()
-                                    
-                                    # Handle deep link redirection after login
-                                    if st.session_state.get("shared_match_id"):
-                                        st.session_state.page = "📝 Create Team"
-                                    
-                                    st.rerun()
-                                else:
-                                    st.error("Invalid username or password")
-                            elif not username:
-                                st.warning("Please enter your username")
-                            elif not password:
-                                st.warning("Please enter your password")
-                
-                with tab_signup:
-                    st.subheader("Create a new account")
-                    with st.form("signup_form"):
-                        new_username = st.text_input(
-                            "Username",
-                            placeholder="Choose a username",
-                            label_visibility="collapsed",
-                            key="signup_username",
-                        )
-                        new_password = st.text_input(
-                            "Password",
-                            type="password",
-                            placeholder="Choose a password",
-                            label_visibility="collapsed",
-                            key="signup_password",
-                        )
-                        confirm_password = st.text_input(
-                            "Confirm Password",
-                            type="password",
-                            placeholder="Confirm your password",
-                            label_visibility="collapsed",
-                            key="signup_confirm",
-                        )
-                        if st.form_submit_button("Sign Up", use_container_width=True):
-                            if not new_username:
-                                st.warning("Please enter a username")
-                            elif not new_password:
-                                st.warning("Please enter a password")
-                            elif not confirm_password:
-                                st.warning("Please confirm your password")
-                            elif new_password != confirm_password:
-                                st.error("Passwords do not match")
-                            elif add_user(new_username, new_password):
-                                st.success("Account created! Please login.")
-                            else:
-                                st.error("Username already exists")
+    if not st.session_state.get('username'):
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.info("Please login to participate in Fantasy IPL")
+            # Auth0 allows users to use their existing username/password
+            if st.button("🔐 Login to Fantasy IPL", use_container_width=True):
+                st.login(provider="auth0")
         st.stop()
     
-    st.sidebar.success(f"Logged in as: **{st.session_state.username}**")
+    #st.sidebar.success(f"Logged in as: **{st.session_state.username}**")
     
     action_cols = st.sidebar.columns(3)
     with action_cols[0]:
         if st.button("🔄", key="refresh_btn"):
             clear_all_caches()
             st.rerun()
-    with action_cols[2]:
-        if st.button("🚪", key="logout_btn"):
-            st.session_state.username = ""
-            cookies["fantasy_ipl_user"] = ""
-            cookies.save()
-            st.rerun()
+    # with action_cols[2]:
+    #     if st.button("🚪", key="logout_btn"):
+    #         # 1. Clear Streamlit session
+    #         st.logout()
+    #         st.session_state.username = ""
+            
+    #         # 2. Redirect to Auth0 to clear their session too
+    #         # We get the domain from the metadata URL
+    #         auth_config = st.secrets.get("auth", {}).get("auth0", {})
+    #         domain = auth_config.get("server_metadata_url", "").split("/.well-known")[0]
+    #         client_id = auth_config.get("client_id", "")
+    #         return_to = st.secrets.get("auth", {}).get("redirect_uri", "").split("/oauth2callback")[0]
+            
+    #         if domain and client_id:
+    #             logout_url = f"{domain}/v2/logout?client_id={client_id}&returnTo={return_to}"
+    #             st.markdown(f'<meta http-equiv="refresh" content="0;URL=\'{logout_url}\'">', unsafe_allow_html=True)
+            
+    #         st.rerun()
     
     if "page" not in st.session_state:
         st.session_state.page = "🏠 Home"
