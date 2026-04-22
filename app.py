@@ -159,19 +159,21 @@ def get_user_permissions(email):
 def main():
     st.title("🏏 Fantasy IPL")
     
-    # Handle deep link handling - BEFORE login check
-    # Store share match_id in session_state so it persists through login flow
-    if "match_id" in st.query_params:
-        pending_match = st.query_params["match_id"]
-        if st.session_state.get("last_processed_match_id") != pending_match:
-            st.session_state.last_processed_match_id = pending_match
-        st.session_state.pending_shared_match = pending_match
-    
-    pending_shared_match = st.session_state.get("pending_shared_match")
+    # Save original URL params BEFORE Auth0 redirects (must be at top of app)
+    if "original_params" not in st.session_state:
+        try:
+            if st.query_params:
+                st.session_state.original_params = dict(st.query_params)
+                print(f"DEBUG: Saved original params: {st.session_state.original_params}")
+            else:
+                st.session_state.original_params = {}
+        except Exception as e:
+            st.session_state.original_params = {}
     
     # 1. Check if user is logged in via native Streamlit Auth
     if not st.session_state.get('username') and st.user.get('is_logged_in'):
         email = st.user.get('email')
+        print(f"DEBUG: User logged in with email: {email}")
         
         # Try to get username from Auth0 token (custom claim or nickname)
         token_username = None
@@ -182,11 +184,13 @@ def main():
                 decoded = jwt.decode(token, options={"verify_signature": False})
                 namespace = "https://fantasy-ipl-jzkkjtdefhinycqj32ebmq.streamlit.app"
                 token_username = decoded.get(f"{namespace}/username") or decoded.get("nickname")
+                print(f"DEBUG: Token username: {token_username}")
         except Exception as e:
             print(f"DEBUG Token decode error: {e}")
         
         # Get username and is_admin from Users sheet (handles auto-add for new users)
         username, is_admin = get_user_permissions(email)
+        print(f"DEBUG: DB username: {username}")
         
         # Use token username if available
         if token_username:
@@ -194,21 +198,29 @@ def main():
         
         st.session_state.username = username
         st.session_state.is_admin = is_admin
+        print(f"DEBUG: Set username to: {username}")
+        
+        # Restore original params after successful login
+        if st.session_state.get("original_params"):
+            st.query_params.update(st.session_state.original_params)
+            print(f"DEBUG: Restored params: {st.session_state.original_params}")
     
-    # Now handle the pending shared match after login is complete
-    if pending_shared_match:
-        st.session_state.shared_match_id = pending_shared_match
-        st.session_state.page = "📝 Create Team"
-        # Clear the pending match and query params now that we've handled them
-        st.session_state.pop("pending_shared_match", None)
-        st.query_params.clear()
+    # Handle shared match from restored params
+    if "match_id" in st.query_params:
+        shared_id = st.query_params["match_id"]
+        if st.session_state.get("last_processed_match_id") != shared_id:
+            st.session_state.last_processed_match_id = shared_id
+            st.session_state.shared_match_id = shared_id
+            st.session_state.page = "📝 Create Team"
+            print(f"DEBUG: Set shared_match_id to: {shared_id}")
     
     if not st.session_state.get('username'):
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.info("Please login to participate in Fantasy IPL")
-            if pending_shared_match:
-                st.session_state.shared_match_id = pending_shared_match
+            if st.session_state.get("original_params"):
+                st.session_state.shared_match_id = st.session_state.original_params.get("match_id")
+                st.success(f"After login, you'll be redirected to create team for match {st.session_state.shared_match_id}")
             # Auth0 allows users to use their existing username/password
             if st.button("🔐 Login to Fantasy IPL", use_container_width=True):
                 st.login(provider="auth0")
