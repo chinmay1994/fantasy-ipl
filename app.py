@@ -176,8 +176,8 @@ def main():
     st.title("🏏 Fantasy IPL")
     
     # Get Auth0 config from secrets
-    auth0_client_id = st.secrets["auth.auth0"]["client_id"]
-    auth0_domain = st.secrets["auth.auth0"]["domain"]
+    auth0_client_id = st.secrets["auth"]["auth0"]["client_id"]
+    auth0_domain = st.secrets["auth"]["auth0"]["domain"]
     
     # ============================================================================
     # LOGIN FLOW WITH QUERY PARAMS PRESERVATION
