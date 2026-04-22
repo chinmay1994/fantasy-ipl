@@ -103,16 +103,44 @@ if "pending_writes" not in st.session_state:
 # Authentication is now handled natively via st.login and Auth0
 def get_user_permissions(email):
     users_df = get_users()
-    if not users_df.empty:
-        cols = {c.lower().replace("_", ""): c for c in users_df.columns}
-        email_col = cols.get('email') or cols.get('username')
-        admin_col = cols.get('isadmin')
-        user_row = users_df[users_df[email_col].str.lower() == email.lower()] if email_col else pd.DataFrame()
-        if not user_row.empty:
-            username = str(user_row.iloc[0][cols.get('username') or email_col])
-            is_admin = str(user_row.iloc[0][admin_col]).strip().upper() == 'TRUE' if admin_col else False
-            return username, is_admin
-    return email, False
+    if users_df.empty:
+        return email.split('@')[0], False
+    
+    cols = {c.lower().replace("_", "").replace(" ", ""): c for c in users_df.columns}
+    print(f"DEBUG: User sheet columns: {list(cols.keys())}")
+    
+    email_col = cols.get('email') or cols.get('username')
+    if not email_col:
+        email_cols = [c for c in users_df.columns if 'email' in c.lower()]
+        print(f"DEBUG: Available email-like cols: {email_cols}")
+        if email_cols:
+            email_col = email_cols[0]
+        else:
+            first_col = users_df.columns[0]
+            print(f"DEBUG: Using first col as email: {first_col}")
+            email_col = first_col
+    
+    print(f"DEBUG: Looking up email: {email}")
+    print(f"DEBUG: Using email col: {email_col}")
+    print(f"DEBUG: Sample emails: {users_df[email_col].head(3).tolist()}")
+    
+    user_row = users_df[users_df[email_col].str.lower() == email.lower()]
+    print(f"DEBUG: User found: {not user_row.empty}")
+    
+    if user_row.empty:
+        return email.split('@')[0], False
+    
+    username_col = cols.get('username')
+    if username_col:
+        username = str(user_row.iloc[0][username_col])
+    else:
+        username = str(user_row.iloc[0][email_col])
+    
+    admin_col = cols.get('isadmin')
+    is_admin = str(user_row.iloc[0][admin_col]).strip().upper() == 'TRUE' if admin_col else False
+    
+    print(f"DEBUG: Found username: {username}, is_admin: {is_admin}")
+    return username, is_admin
 
 
 def main():
@@ -121,7 +149,31 @@ def main():
     # 1. Check if user is logged in via native Streamlit Auth
     if not st.session_state.get('username') and st.user.get('is_logged_in'):
         email = st.user.get('email')
-        username, is_admin = get_user_permissions(email)
+        
+        # Try to get username from Auth0 token (custom claim or nickname)
+        token_username = None
+        try:
+            import jwt
+            token = st.session_state.get('id_token')
+            if token:
+                decoded = jwt.decode(token, options={"verify_signature": False})
+                namespace = "https://fantasy-ipl-jzkkjtdefhinycqj32ebmq.streamlit.app"
+                token_username = decoded.get(f"{namespace}/username") or decoded.get("nickname")
+                print(f"DEBUG: Token username: {token_username}")
+        except Exception as e:
+            print(f"DEBUG Token decode error: {e}")
+        
+        # Get is_admin from Users sheet (required for admin check)
+        _, is_admin = get_user_permissions(email)
+        
+        # Use token username if available, otherwise lookup in sheet
+        if token_username:
+            username = token_username
+            print(f"DEBUG: Using token username: {username}")
+        else:
+            username, _ = get_user_permissions(email)
+            print(f"DEBUG: Using sheet username: {username}")
+        
         st.session_state.username = username
         st.session_state.is_admin = is_admin
             
