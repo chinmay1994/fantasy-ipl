@@ -213,6 +213,8 @@ def main():
             st.session_state.shared_match_id = shared_id
             st.session_state.page = "📝 Create Team"
             print(f"DEBUG: Set shared_match_id to: {shared_id}")
+            # Force rerun to apply the page change
+            st.rerun()
     
     if not st.session_state.get('username'):
         col1, col2, col3 = st.columns([1, 2, 1])
