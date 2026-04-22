@@ -105,6 +105,12 @@ if "pending_writes" not in st.session_state:
 def auto_add_user(email, username):
     try:
         ws = get_spreadsheet().worksheet("Users")
+        # Check if user already exists to avoid duplicates
+        all_users = ws.get_all_values()
+        for row in all_users[1:]:  # Skip header
+            if row[0].lower() == username.lower() or (len(row) > 1 and row[1].lower() == email.lower()):
+                return False  # User already exists
+        
         ws.append_row([username, email, "FALSE"], value_input_option="USER_ENTERED")
         clear_all_caches()
         return True
@@ -166,20 +172,15 @@ def main():
                 decoded = jwt.decode(token, options={"verify_signature": False})
                 namespace = "https://fantasy-ipl-jzkkjtdefhinycqj32ebmq.streamlit.app"
                 token_username = decoded.get(f"{namespace}/username") or decoded.get("nickname")
-                print(f"DEBUG: Token username: {token_username}")
         except Exception as e:
             print(f"DEBUG Token decode error: {e}")
         
-        # Get is_admin from Users sheet (required for admin check)
-        _, is_admin = get_user_permissions(email)
+        # Get username and is_admin from Users sheet (handles auto-add for new users)
+        username, is_admin = get_user_permissions(email)
         
-        # Use token username if available, otherwise lookup in sheet
+        # Use token username if available
         if token_username:
             username = token_username
-            print(f"DEBUG: Using token username: {username}")
-        else:
-            username, _ = get_user_permissions(email)
-            print(f"DEBUG: Using sheet username: {username}")
         
         st.session_state.username = username
         st.session_state.is_admin = is_admin
