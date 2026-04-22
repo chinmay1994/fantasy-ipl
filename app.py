@@ -161,19 +161,17 @@ def main():
     
     # Save original URL params BEFORE Auth0 redirects (must be at top of app)
     if "original_params" not in st.session_state:
-        try:
-            if st.query_params:
-                st.session_state.original_params = dict(st.query_params)
-                print(f"DEBUG: Saved original params: {st.session_state.original_params}")
-            else:
-                st.session_state.original_params = {}
-        except Exception as e:
+        if st.query_params:
+            st.session_state.original_params = dict(st.query_params)
+        else:
             st.session_state.original_params = {}
     
-    # 1. Check if user is logged in via native Streamlit Auth
-    if not st.session_state.get('username') and st.user.get('is_logged_in'):
+    # Check if user is logged in via Auth0 (st.user is available after Auth0 redirects back)
+    user_logged_in = st.user.get('is_logged_in')
+    
+    # 1. Set username if logged in and not yet set
+    if not st.session_state.get('username') and user_logged_in:
         email = st.user.get('email')
-        print(f"DEBUG: User logged in with email: {email}")
         
         # Try to get username from Auth0 token (custom claim or nickname)
         token_username = None
@@ -184,13 +182,11 @@ def main():
                 decoded = jwt.decode(token, options={"verify_signature": False})
                 namespace = "https://fantasy-ipl-jzkkjtdefhinycqj32ebmq.streamlit.app"
                 token_username = decoded.get(f"{namespace}/username") or decoded.get("nickname")
-                print(f"DEBUG: Token username: {token_username}")
-        except Exception as e:
-            print(f"DEBUG Token decode error: {e}")
+        except Exception:
+            pass
         
         # Get username and is_admin from Users sheet (handles auto-add for new users)
         username, is_admin = get_user_permissions(email)
-        print(f"DEBUG: DB username: {username}")
         
         # Use token username if available
         if token_username:
@@ -198,21 +194,21 @@ def main():
         
         st.session_state.username = username
         st.session_state.is_admin = is_admin
-        print(f"DEBUG: Set username to: {username}")
         
         # Restore original params after successful login
         if st.session_state.get("original_params"):
             st.query_params.update(st.session_state.original_params)
-            print(f"DEBUG: Restored params: {st.session_state.original_params}")
     
-    # Handle shared match from restored params
-    if "match_id" in st.query_params:
-        shared_id = st.query_params["match_id"]
-        if st.session_state.get("last_processed_match_id") != shared_id:
-            st.session_state.last_processed_match_id = shared_id
-            st.session_state.shared_match_id = shared_id
+    # 2. Handle shared match from query_params (restored after login)
+    # After restoring original_params to query_params, check query_params
+    if "match_id" in st.query_params and st.session_state.get('username'):
+        match_id_to_use = st.query_params["match_id"]
+        if st.session_state.get("last_processed_match_id") != match_id_to_use:
+            st.session_state.last_processed_match_id = match_id_to_use
+            st.session_state.shared_match_id = match_id_to_use
             st.session_state.page = "📝 Create Team"
-            print(f"DEBUG: Set shared_match_id to: {shared_id}")
+            # Clear original_params to prevent re-processing
+            st.session_state.original_params = {}
             # Force rerun to apply the page change
             st.rerun()
     
@@ -220,9 +216,13 @@ def main():
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             st.info("Please login to participate in Fantasy IPL")
-            if st.session_state.get("original_params"):
-                st.session_state.shared_match_id = st.session_state.original_params.get("match_id")
-                st.success(f"After login, you'll be redirected to create team for match {st.session_state.shared_match_id}")
+            
+            # Check if there's a pending match from original_params or query_params
+            pending = st.session_state.get("original_params", {}).get("match_id") or st.query_params.get("match_id")
+            if pending:
+                st.session_state.shared_match_id = pending
+                st.success(f"After login, you'll be redirected to create team for match: {pending}")
+            
             # Auth0 allows users to use their existing username/password
             if st.button("🔐 Login to Fantasy IPL", use_container_width=True):
                 st.login(provider="auth0")
