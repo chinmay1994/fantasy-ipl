@@ -29,6 +29,7 @@ from lib.google_sheets import (
     get_users,
     get_overall_leaderboard,
     get_player_stats_for_match,
+    get_spreadsheet,
 )
 from lib.validators import validate_team, get_team_stats
 from lib.scoring import calculate_team_total, calculate_team_with_player_scores
@@ -101,34 +102,41 @@ if "pending_writes" not in st.session_state:
     st.session_state.pending_writes = []
 
 # Authentication is now handled natively via st.login and Auth0
+def auto_add_user(email, username):
+    try:
+        ws = get_spreadsheet().worksheet("Users")
+        ws.append_row([username, email, "FALSE"], value_input_option="USER_ENTERED")
+        clear_all_caches()
+        return True
+    except Exception as e:
+        print(f"Error auto-adding user: {e}")
+        return False
+
+
 def get_user_permissions(email):
     users_df = get_users()
     if users_df.empty:
-        return email.split('@')[0], False
+        username = email.split('@')[0]
+        auto_add_user(email, username)
+        return username, False
     
     cols = {c.lower().replace("_", "").replace(" ", ""): c for c in users_df.columns}
-    print(f"DEBUG: User sheet columns: {list(cols.keys())}")
     
     email_col = cols.get('email') or cols.get('username')
     if not email_col:
         email_cols = [c for c in users_df.columns if 'email' in c.lower()]
-        print(f"DEBUG: Available email-like cols: {email_cols}")
         if email_cols:
             email_col = email_cols[0]
         else:
             first_col = users_df.columns[0]
-            print(f"DEBUG: Using first col as email: {first_col}")
             email_col = first_col
     
-    print(f"DEBUG: Looking up email: {email}")
-    print(f"DEBUG: Using email col: {email_col}")
-    print(f"DEBUG: Sample emails: {users_df[email_col].head(3).tolist()}")
-    
     user_row = users_df[users_df[email_col].str.lower() == email.lower()]
-    print(f"DEBUG: User found: {not user_row.empty}")
     
     if user_row.empty:
-        return email.split('@')[0], False
+        username = email.split('@')[0]
+        auto_add_user(email, username)
+        return username, False
     
     username_col = cols.get('username')
     if username_col:
@@ -139,7 +147,6 @@ def get_user_permissions(email):
     admin_col = cols.get('isadmin')
     is_admin = str(user_row.iloc[0][admin_col]).strip().upper() == 'TRUE' if admin_col else False
     
-    print(f"DEBUG: Found username: {username}, is_admin: {is_admin}")
     return username, is_admin
 
 

@@ -640,11 +640,10 @@ def save_entry(username: str, match_id: str, players: list[dict]) -> str:
         leaderboard_ws = get_worksheet("Leaderboard")
         
         if validation_ws and leaderboard_ws:
-            all_entries = get_entries()
-            entry_row = len(all_entries) + 1 # +1 because all_entries includes headers but len is count
-            # Actually if we just appended to Entries, the new row is len(all_entries)+1
-            # Wait, get_entries() fetches the current state. 
-            # If we just added one, entry_row = len(all_entries) + 1
+            # Fetch fresh entry count without cache
+            entries_ws = get_worksheet("Entries")
+            all_entries = entries_ws.get_all_values()
+            entry_row = len(all_entries)
             r = entry_row
             
             v_formulas = [[
