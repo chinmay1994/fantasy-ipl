@@ -156,8 +156,21 @@ def main():
             st.rerun()
     with action_cols[2]:
         if st.button("🚪", key="logout_btn"):
+            # 1. Clear Streamlit session
             st.logout()
             st.session_state.username = ""
+            
+            # 2. Redirect to Auth0 to clear their session too
+            # We get the domain from the metadata URL
+            auth_config = st.secrets.get("auth", {}).get("auth0", {})
+            domain = auth_config.get("server_metadata_url", "").split("/.well-known")[0]
+            client_id = auth_config.get("client_id", "")
+            return_to = st.secrets.get("auth", {}).get("redirect_uri", "").split("/oauth2callback")[0]
+            
+            if domain and client_id:
+                logout_url = f"{domain}/v2/logout?client_id={client_id}&returnTo={return_to}"
+                st.markdown(f'<meta http-equiv="refresh" content="0;URL=\'{logout_url}\'">', unsafe_allow_html=True)
+            
             st.rerun()
     
     if "page" not in st.session_state:
