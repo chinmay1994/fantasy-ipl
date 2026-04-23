@@ -150,7 +150,7 @@ def _fetch_all_records(sheet_name: str) -> pd.DataFrame:
 
 def get_all_records(sheet_name: str) -> pd.DataFrame:
     """Central dispatcher for tiered caching"""
-    live_sheets = ["Matches", "PlayerPoints", "Leaderboard"]
+    live_sheets = ["Matches", "PlayerPoints", "Leaderboard", "BallByBall", "OverSummary"]
     static_sheets = ["Rules", "MatchSquad", "Players", "Matches_Archive"]
     
     if sheet_name in live_sheets:
