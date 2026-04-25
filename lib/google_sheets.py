@@ -943,14 +943,33 @@ def get_player_stats_for_match(match_id: str) -> pd.DataFrame:
         # We'll use FantasySelections sheet directly for speed
         all_selections = get_fantasy_selections()
         if not all_selections.empty and "MatchID" in all_selections.columns:
-            match_selections = all_selections[all_selections["MatchID"].astype(str) == str(match_id)]
-            selection_counts = match_selections["PlayerID"].value_counts().reset_index()
-            selection_counts.columns = ["PlayerID", "SelectedBy"]
-            stats = stats.merge(selection_counts, on="PlayerID", how="left")
+            match_selections = all_selections[all_selections["MatchID"].astype(str) == str(match_id)].copy()
+            
+            # Ensure captain/vc columns are numeric
+            c_col = "IsCaptain (1/0)"
+            vc_col = "IsViceCaptain (1/0)"
+            match_selections[c_col] = pd.to_numeric(match_selections[c_col], errors='coerce').fillna(0).astype(int)
+            match_selections[vc_col] = pd.to_numeric(match_selections[vc_col], errors='coerce').fillna(0).astype(int)
+            
+            agg_stats = match_selections.groupby("PlayerID").agg({
+                "PlayerID": "count",
+                c_col: "sum",
+                vc_col: "sum"
+            }).rename(columns={
+                "PlayerID": "SelectedBy", 
+                c_col: "CaptainCount", 
+                vc_col: "VCCount"
+            }).reset_index()
+            
+            stats = stats.merge(agg_stats, on="PlayerID", how="left")
         else:
             stats["SelectedBy"] = 0
+            stats["CaptainCount"] = 0
+            stats["VCCount"] = 0
             
         stats["SelectedBy"] = stats["SelectedBy"].fillna(0).astype(int)
+        stats["CaptainCount"] = stats["CaptainCount"].fillna(0).astype(int)
+        stats["VCCount"] = stats["VCCount"].fillna(0).astype(int)
         
         # 4. Final sorting and cleanup
         stats = stats.sort_values(by="TotalPts", ascending=False).reset_index(drop=True)

@@ -1336,8 +1336,19 @@ def render_live_stats():
             display_df["Player"] = display_df.apply(lambda r: f"{get_role_emoji(r['Role'])} {r['PlayerName']}", axis=1)
             
             # Reorder and rename columns
-            display_df = display_df[["Player", "Team", "TotalPts", "SelectedBy"]]
-            display_df.columns = ["Player Name", "Team", "Points Scored", "Selected By"]
+            display_df = display_df[["Player", "Team", "TotalPts", "SelectedBy", "CaptainCount", "VCCount"]]
+            
+            def format_cvc(row):
+                c = int(row.get('CaptainCount', 0))
+                vc = int(row.get('VCCount', 0))
+                parts = []
+                if c > 0: parts.append(f"{c}C")
+                if vc > 0: parts.append(f"{vc}VC")
+                return ", ".join(parts) if parts else "-"
+
+            display_df["C/VC"] = display_df.apply(format_cvc, axis=1)
+            display_df = display_df[["Player", "Team", "TotalPts", "SelectedBy", "C/VC"]]
+            display_df.columns = ["Player Name", "Team", "Points", "Picks", "C/VC"]
             
             # Metrics for quick overview
             m_cols = st.columns(3)
@@ -1357,10 +1368,11 @@ def render_live_stats():
             st.dataframe(
                 display_df,
                 column_config={
-                    "Player Name": st.column_config.TextColumn("Player Name", width="large"),
+                    "Player Name": st.column_config.TextColumn("Player Name", width="medium"),
                     "Team": st.column_config.TextColumn("Team", width="small"),
-                    "Points Scored": st.column_config.NumberColumn("Points", format="%.1f", help="Points scored in this match so far"),
-                    "Selected By": st.column_config.NumberColumn("Selected By", format="%d", help="How many participants picked this player"),
+                    "Points": st.column_config.NumberColumn("Points", format="%.1f", width="small", help="Points scored in this match so far"),
+                    "Picks": st.column_config.NumberColumn("Picks", format="%d", width="small", help="Total participants who picked this player"),
+                    "C/VC": st.column_config.TextColumn("C/VC", width="small", help="Captain and Vice-Captain picks"),
                 },
                 hide_index=True,
                 use_container_width=True,
