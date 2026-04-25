@@ -401,12 +401,15 @@ def render_home():
                                 
                                 player_data.append({
                                     "Player": f"{role_emoji.get(s.role, '❓')} {s.player_name}{multiplier}",
-                                    "Pts": f"{points:.1f}",
+                                    "Pts": float(points),
                                     "Stats": stats_str,
                                 })
                             
                             st.dataframe(
                                 pd.DataFrame(player_data),
+                                column_config={
+                                    "Pts": st.column_config.NumberColumn("Pts", format="%.1f"),
+                                },
                                 hide_index=True,
                                 use_container_width=True,
                             )
@@ -473,12 +476,15 @@ def render_home():
                         
                         player_data.append({
                             "Player": f"{role_emoji.get(ps.role, '❓')} {ps.player_name}{multiplier}",
-                            "Pts": f"{ps.points:.1f}",
+                            "Pts": float(ps.points),
                             "Stats": ", ".join(stats) if stats else "-",
                         })
                     
                     st.dataframe(
                         pd.DataFrame(player_data),
+                        column_config={
+                            "Pts": st.column_config.NumberColumn("Pts", format="%.1f"),
+                        },
                         hide_index=True,
                         use_container_width=True,
                     )
@@ -793,12 +799,15 @@ def render_all_teams():
                     
                     player_data.append({
                         "Player": f"{role_emoji.get(s.role, '❓')} {s.player_name}{multiplier}",
-                        "Pts": f"{points:.1f}",
+                        "Pts": float(points),
                         "Stats": stats_str,
                     })
                 
                 st.dataframe(
                     pd.DataFrame(player_data),
+                    column_config={
+                        "Pts": st.column_config.NumberColumn("Pts", format="%.1f"),
+                    },
                     hide_index=True,
                     use_container_width=True,
                 )
