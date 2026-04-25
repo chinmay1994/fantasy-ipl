@@ -19,6 +19,9 @@ from lib.models import (
 IST = pytz.timezone('Asia/Kolkata')
 IST_OFFSET = timedelta(hours=5, minutes=30)
 
+# Global in-memory cache for resilient fallback across ALL concurrent sessions
+# Module-level variables in Streamlit persist across sessions
+_LAST_KNOWN_GOOD_DATA = {}
 
 def now_ist() -> datetime:
     return datetime.now(IST)
@@ -90,8 +93,10 @@ def get_gspread_client():
 
 def clear_all_caches():
     st.cache_data.clear()
+    st.cache_resource.clear()
 
 
+@st.cache_resource(ttl=300, show_spinner=False)
 def get_spreadsheet():
     client = get_gspread_client()
     if client is None:
@@ -102,18 +107,20 @@ def get_spreadsheet():
         spreadsheet_id = spreadsheet_url.split("/d/")[1].split("/")[0]
         return client.open_by_key(spreadsheet_id)
     except Exception as e:
-        st.error(f"Failed to open spreadsheet: {e}")
+        # Log to console instead of showing error to user
+        print(f"Resilience: Failed to open spreadsheet: {e}")
         return None
 
 
+@st.cache_resource(ttl=300, show_spinner=False)
 def get_worksheet(sheet_name: str):
     spreadsheet = get_spreadsheet()
     if spreadsheet is None:
         return None
     try:
         return spreadsheet.worksheet(sheet_name)
-    except gspread.WorksheetNotFound:
-        st.error(f"Worksheet '{sheet_name}' not found")
+    except Exception as e:
+        print(f"Resilience: Worksheet '{sheet_name}' error: {e}")
         return None
 
 
@@ -135,18 +142,32 @@ def get_all_records_static(sheet_name: str) -> pd.DataFrame:
     return _fetch_all_records(sheet_name)
 
 def _fetch_all_records(sheet_name: str) -> pd.DataFrame:
+    global _LAST_KNOWN_GOOD_DATA
+    
     worksheet = get_worksheet(sheet_name)
-    if worksheet is None:
-        return pd.DataFrame()
-    try:
-        data = worksheet.get_all_values()
-        if not data:
-            return pd.DataFrame()
-        if len(data) == 1:
-            return pd.DataFrame(columns=data[0])
-        return pd.DataFrame(data[1:], columns=data[0])
-    except Exception:
-        return pd.DataFrame()
+    
+    if worksheet is not None:
+        try:
+            data = worksheet.get_all_values()
+            if data:
+                if len(data) == 1:
+                    df = pd.DataFrame(columns=data[0])
+                else:
+                    df = pd.DataFrame(data[1:], columns=data[0])
+                
+                # Update the global fallback cache on success
+                _LAST_KNOWN_GOOD_DATA[sheet_name] = df
+                return df
+        except Exception as e:
+            print(f"Resilience: Error fetching {sheet_name}: {e}")
+            if "429" in str(e):
+                st.toast(f"⚠️ Sheets API limit reached. Using cached data for {sheet_name}.", icon="⏳")
+    
+    # Fallback to the last successful fetch from any session
+    if sheet_name in _LAST_KNOWN_GOOD_DATA:
+        return _LAST_KNOWN_GOOD_DATA[sheet_name]
+        
+    return pd.DataFrame()
 
 def get_all_records(sheet_name: str) -> pd.DataFrame:
     """Central dispatcher for tiered caching"""

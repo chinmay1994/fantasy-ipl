@@ -377,7 +377,8 @@ def render_home():
                             player_scores_dict = {ps.player_name: ps for ps in player_scores}
                             
                             player_data = []
-                            for s in sorted(selections, key=lambda x: x.pick_no):
+                            # Sort by points descending (using player_scores_dict to look up points)
+                            for s in sorted(selections, key=lambda x: player_scores_dict.get(x.player_name).points if player_scores_dict.get(x.player_name) else 0.0, reverse=True):
                                 multiplier = ""
                                 if s.is_captain:
                                     multiplier = " 🏆 (2x)" if is_own_team else " (C)"
@@ -775,7 +776,8 @@ def render_all_teams():
                 player_scores_dict = {ps.player_name: ps for ps in player_scores}
                 
                 player_data = []
-                for s in sorted(selections, key=lambda x: x.pick_no):
+                # Sort by points descending
+                for s in sorted(selections, key=lambda x: player_scores_dict.get(x.player_name).points if player_scores_dict.get(x.player_name) else 0.0, reverse=True):
                     multiplier = ""
                     if s.is_captain:
                         multiplier = " 🏆 (2x)"
