@@ -313,7 +313,8 @@ def get_leaderboard_position(match_id: str, username: str, scoring_rules) -> tup
     
     scores = []
     for team in teams:
-        total = calculate_team_total(team.players, player_points, scoring_rules)
+        # Use pre-calculated points from the sheet formula
+        total = sum(p.points for p in team.players)
         scores.append((team.user_name, total))
     
     scores.sort(key=lambda x: x[1], reverse=True)
@@ -353,12 +354,8 @@ def render_home():
             teams_with_scores = []
             for team in teams:
                 selections = get_team_selections(team.entry_id)
-                
-                if player_points is not None and not player_points.empty:
-                    total_points = calculate_team_total(selections, player_points, scoring_rules)
-                else:
-                    total_points = 0.0
-                
+                # Use pre-calculated points from the sheet formula
+                total_points = sum(s.points for s in selections)
                 teams_with_scores.append((team.user_name, total_points, selections, team.entry_id))
             
             teams_with_scores.sort(key=lambda x: x[1], reverse=True)
@@ -402,7 +399,7 @@ def render_home():
                                 
                                 player_data.append({
                                     "Player": f"{role_emoji.get(s.role, '❓')} {s.player_name}{multiplier}",
-                                    "Pts": float(points),
+                                    "Pts": float(s.points),
                                     "Stats": stats_str,
                                 })
                             
@@ -454,7 +451,8 @@ def render_home():
                     st.warning(f"No points data available for {match.match_name} yet.")
                     continue
                 
-                total_score, player_scores = calculate_team_with_player_scores(selections, player_points, scoring_rules)
+                total_score = sum(s.points for s in selections)
+                _, player_scores = calculate_team_with_player_scores(selections, player_points, scoring_rules)
                 
                 with st.expander(f"📌 {match.match_name} - {total_score:.2f} pts (Rank: #{position}/{total_players})"):
                     role_emoji = {"WK": "🧤", "BAT": "🏏", "AR": "🔄", "BWL": "🎳"}
@@ -759,7 +757,8 @@ def render_all_teams():
         selections = get_team_selections(team.entry_id)
         
         if player_points is not None and not player_points.empty:
-            total_points = calculate_team_total(selections, player_points, scoring_rules)
+            # Use pre-calculated points from the sheet formula
+            total_points = sum(s.points for s in selections)
         else:
             total_points = 0.0
         
@@ -801,7 +800,7 @@ def render_all_teams():
                     
                     player_data.append({
                         "Player": f"{role_emoji.get(s.role, '❓')} {s.player_name}{multiplier}",
-                        "Pts": float(points),
+                        "Pts": float(s.points),
                         "Stats": stats_str,
                     })
                 
@@ -1404,7 +1403,8 @@ def render_live_stats():
                     if not player_points_df.empty:
                         other_teams_with_points = []
                         for t in other_teams:
-                            team_points = calculate_team_total(t.players, player_points_df, scoring_rules)
+                            # Use pre-calculated points from the sheet formula
+                            team_points = sum(p.points for p in t.players)
                             other_teams_with_points.append((t, team_points))
                         other_teams_with_points.sort(key=lambda x: x[1], reverse=True)
                         options = [f"{t.user_name} ({pts:.1f} pts)" for t, pts in other_teams_with_points]

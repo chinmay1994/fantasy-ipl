@@ -61,6 +61,7 @@ class FantasySelection:
     credits: float
     is_captain: bool
     is_vice_captain: bool
+    points: float = 0.0
 
 
 @dataclass

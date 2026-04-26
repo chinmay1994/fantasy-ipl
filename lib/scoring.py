@@ -15,14 +15,11 @@ def calculate_batting_points(
     
     bonus_pts = 0.0
     if runs >= 100:
-        bonus_pts += rules.run_100_bonus
-        bonus_pts += rules.run_50_bonus
-        bonus_pts += rules.run_30_bonus
+        bonus_pts = rules.run_100_bonus
     elif runs >= 50:
-        bonus_pts += rules.run_50_bonus
-        bonus_pts += rules.run_30_bonus
+        bonus_pts = rules.run_50_bonus
     elif runs >= 30:
-        bonus_pts += rules.run_30_bonus
+        bonus_pts = rules.run_30_bonus
     
     return batting_pts, bonus_pts
 
@@ -147,12 +144,8 @@ def calculate_team_total(
         
         is_dismissed = row.get("Runs", 0) == 0 and row.get("InStartingXI", 0) == 1
         
-        player_total = calculate_player_points(
-            stats,
-            scoring_rules,
-            multiplier,
-            is_dismissed,
-        )
+        # Use pre-calculated points from the sheet formula
+        player_total = selection.points
         
         total += player_total
     
@@ -227,9 +220,10 @@ def calculate_team_with_player_scores(
             )
             
             is_dismissed = runs == 0 and row.get("InStartingXI", 0) == 1
-            player_total = calculate_player_points(stats, scoring_rules, multiplier, is_dismissed)
+            # Use the pre-calculated points from the selection (Sheet formula)
+            player_total = selection.points
         else:
-            player_total = 0.0
+            player_total = selection.points if selection.points else 0.0
         
         total += player_total
         

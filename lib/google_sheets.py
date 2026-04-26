@@ -538,6 +538,13 @@ def get_team_selections(entry_id: str) -> list[FantasySelection]:
         is_vc_val = row.get("IsViceCaptain (1/0)", 0)
         is_vice_captain = str(is_vc_val) == "1" if is_vc_val else False
         
+        # Read points directly from the 'FinalPoints' column calculated by sheet formulas
+        points_val = row.get("FinalPoints", 0.0)
+        try:
+            points = float(points_val) if points_val and not pd.isna(points_val) else 0.0
+        except:
+            points = 0.0
+        
         selections.append(FantasySelection(
             entry_id=str(row.get("EntryID", "")),
             match_id=str(row.get("MatchID", "")),
@@ -550,6 +557,7 @@ def get_team_selections(entry_id: str) -> list[FantasySelection]:
             credits=float(row.get("Credits")) if row.get("Credits") and str(row.get("Credits")).strip() and not pd.isna(row.get("Credits")) else 0.0,
             is_captain=is_captain,
             is_vice_captain=is_vice_captain,
+            points=points
         ))
     
     return selections
