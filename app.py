@@ -279,7 +279,13 @@ def main():
             st.session_state.last_processed_match_id = match_id_to_use
             st.session_state.shared_match_id = match_id_to_use
             st.session_state.page = "📝 Create Team"
+            
+            # Clean up the URL so that the deep link doesn't "stick"
+            # if the user manually visits the base URL later.
+            del st.query_params["match_id"]
+            
             st.rerun()
+
     
     #st.sidebar.success(f"Logged in as: **{st.session_state.username}**")
     
