@@ -191,13 +191,19 @@ def main():
     
     # 1. Check if user is already in session state
     if "user_info" not in st.session_state:
-        # 2. Check if user is in cookies (Automatic Login)
+        # 2. Check if user is in cookies (Wait a moment for the async component)
         saved_user = controller.get('auth_user')
+        
+        # If not found immediately, wait briefly and try once more (handles async lag)
+        if not saved_user:
+            time.sleep(0.2)
+            saved_user = controller.get('auth_user')
+            
         if saved_user:
             st.session_state.user_info = saved_user
             st.rerun()
         
-        # 3. If no cookie, show login button
+        # 3. If no cookie after wait, show login button
         current_params = dict(st.query_params)
         app_state = encode_params_to_state(current_params) if current_params else ""
         
@@ -212,15 +218,21 @@ def main():
             st.session_state.app_state = user_info.get('appState', '')
             
             # 4. Save to cookie for future automatic login
-            # We remove appState from the cookie to keep it clean
-            cookie_data = user_info.copy()
-            if 'appState' in cookie_data:
-                del cookie_data['appState']
+            # PRUNING: Only save essentials to avoid cookie size limits (4KB)
+            cookie_data = {
+                "email": user_info.get("email"),
+                "name": user_info.get("name"),
+                "picture": user_info.get("picture"),
+                "sub": user_info.get("sub")
+            }
             controller.set('auth_user', cookie_data)
             
+            # Give the browser a moment to process the cookie before rerunning
+            time.sleep(0.5)
             st.rerun()
         else:
             st.stop()
+
 
     
     # ============================================================================
