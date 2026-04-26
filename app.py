@@ -194,7 +194,8 @@ def main():
         user_info = login_button(
             clientId=auth0_client_id,
             domain=auth0_domain,
-            appState=app_state if app_state else None
+            appState=app_state if app_state else None,
+            cacheLocation="localstorage"
         )
         
         if user_info:
