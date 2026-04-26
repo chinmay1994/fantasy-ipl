@@ -6,6 +6,9 @@ import json
 import time
 import uuid
 from auth0_component import login_button
+from streamlit_cookies_controller import CookieController
+
+
 from lib.google_sheets import (
     get_matches,
     get_upcoming_matches,
@@ -179,31 +182,46 @@ def main():
     auth0_client_id = st.secrets["auth"]["auth0"]["client_id"]
     auth0_domain = st.secrets["auth"]["auth0"]["domain"]
     
+    # Initialize Cookie Controller
+    controller = CookieController()
+    
     # ============================================================================
-    # LOGIN FLOW WITH QUERY PARAMS PRESERVATION
+    # LOGIN FLOW WITH COOKIE PERSISTENCE & QUERY PARAMS PRESERVATION
     # ============================================================================
     
+    # 1. Check if user is already in session state
     if "user_info" not in st.session_state:
-        # Get current query params
-        current_params = dict(st.query_params)
+        # 2. Check if user is in cookies (Automatic Login)
+        saved_user = controller.get('auth_user')
+        if saved_user:
+            st.session_state.user_info = saved_user
+            st.rerun()
         
-        # Encode as appState for Auth0
+        # 3. If no cookie, show login button
+        current_params = dict(st.query_params)
         app_state = encode_params_to_state(current_params) if current_params else ""
         
-        # Show login button with appState
         user_info = login_button(
             clientId=auth0_client_id,
             domain=auth0_domain,
-            appState=app_state if app_state else None,
-            cacheLocation="localstorage"
+            appState=app_state if app_state else None
         )
         
         if user_info:
             st.session_state.user_info = user_info
             st.session_state.app_state = user_info.get('appState', '')
+            
+            # 4. Save to cookie for future automatic login
+            # We remove appState from the cookie to keep it clean
+            cookie_data = user_info.copy()
+            if 'appState' in cookie_data:
+                del cookie_data['appState']
+            controller.set('auth_user', cookie_data)
+            
             st.rerun()
         else:
             st.stop()
+
     
     # ============================================================================
     # RESTORE QUERY PARAMS AFTER LOGIN
@@ -252,24 +270,20 @@ def main():
         if st.button("🔄", key="refresh_btn"):
             clear_all_caches()
             st.rerun()
-    # with action_cols[2]:
-    #     if st.button("🚪", key="logout_btn"):
-    #         # 1. Clear Streamlit session
-    #         st.logout()
-    #         st.session_state.username = ""
+    with action_cols[2]:
+        if st.button("🚪", key="logout_btn"):
+            # Clear session state
+            if "user_info" in st.session_state:
+                del st.session_state.user_info
+            if "username" in st.session_state:
+                st.session_state.username = ""
             
-    #         # 2. Redirect to Auth0 to clear their session too
-    #         # We get the domain from the metadata URL
-    #         auth_config = st.secrets.get("auth", {}).get("auth0", {})
-    #         domain = auth_config.get("server_metadata_url", "").split("/.well-known")[0]
-    #         client_id = auth_config.get("client_id", "")
-    #         return_to = st.secrets.get("auth", {}).get("redirect_uri", "").split("/oauth2callback")[0]
+            # Clear cookie
+            controller.remove('auth_user')
             
-    #         if domain and client_id:
-    #             logout_url = f"{domain}/v2/logout?client_id={client_id}&returnTo={return_to}"
-    #             st.markdown(f'<meta http-equiv="refresh" content="0;URL=\'{logout_url}\'">', unsafe_allow_html=True)
-            
-    #         st.rerun()
+            st.rerun()
+
+
     
     if "page" not in st.session_state:
         st.session_state.page = "🏠 Home"
