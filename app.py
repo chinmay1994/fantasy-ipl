@@ -289,11 +289,16 @@ def main():
                 del st.session_state.user_info
             if "username" in st.session_state:
                 st.session_state.username = ""
+            if "is_admin" in st.session_state:
+                st.session_state.is_admin = False
             
             # Clear cookie
             controller.remove('auth_user')
             
+            # Give the browser a moment to process the cookie removal
+            time.sleep(0.5)
             st.rerun()
+
 
 
     
